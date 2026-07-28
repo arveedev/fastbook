@@ -15,6 +15,18 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<script>
+  // Mobile browsers (esp. iOS/Android Chrome) report 100vh taller than what's
+  // actually visible because it ignores the address bar / toolbar. This computes
+  // the real usable height in pixels and exposes it as --app-vh (1% of it), so
+  // CSS can do calc(var(--app-vh) * 100) for a height that never overflows.
+  function setAppViewportHeight() {
+    document.documentElement.style.setProperty('--app-vh', (window.innerHeight * 0.01) + 'px');
+  }
+  setAppViewportHeight();
+  window.addEventListener('resize', setAppViewportHeight);
+  window.addEventListener('orientationchange', () => setTimeout(setAppViewportHeight, 100));
+</script>
 <div id="app-root"></div>
 
 <!-- Third-party libraries (offline database, QR generation, QR scanning) -->

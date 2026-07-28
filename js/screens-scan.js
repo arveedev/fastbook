@@ -48,20 +48,33 @@ async function startScanner() {
   const statusEl = document.getElementById('scan-status');
   scanPaused = false;
   try {
-    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    });
     video.srcObject = scanStream;
+    // Explicitly start playback — relying on the `autoplay` attribute alone is
+    // unreliable on some mobile browsers once getUserMedia resolves asynchronously.
+    try { await video.play(); } catch (playErr) { /* some browsers auto-play already */ }
     statusEl.textContent = '';
+
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const MAX_DIM = 900; // cap resolution for consistent, fast, reliable decoding
 
     const tick = () => {
       if (!video.videoWidth) { scanRAF = requestAnimationFrame(tick); return; }
       if (scanPaused) { scanRAF = requestAnimationFrame(tick); return; }
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+
+      const scale = Math.min(1, MAX_DIM / Math.max(video.videoWidth, video.videoHeight));
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+      const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
       if (code && code.data) {
         handleQrDetected(code.data);
       }

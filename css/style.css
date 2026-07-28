@@ -53,7 +53,12 @@ button, input, select, textarea { font-family: inherit; }
 a { color: inherit; }
 
 /* ---------- App Shell ---------- */
-#app-root { position: relative; height: 100vh; width: 100vw; overflow: hidden; display: flex; flex-direction: column; }
+#app-root {
+  position: relative; width: 100vw; overflow: hidden; display: flex; flex-direction: column;
+  height: 100vh;              /* fallback for older browsers */
+  height: 100dvh;             /* modern dynamic viewport height */
+  height: calc(var(--app-vh, 1vh) * 100); /* JS-computed, most reliable on mobile */
+}
 
 .screen {
   position: absolute;
@@ -98,7 +103,7 @@ a { color: inherit; }
 /* ---------- Top Bar ---------- */
 .topbar {
   position: relative; z-index: 2; display: flex; align-items: center; gap: 12px;
-  padding: 14px 16px calc(14px + env(safe-area-inset-top, 0px));
+  padding: calc(14px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) 14px calc(16px + env(safe-area-inset-left, 0px));
   background: linear-gradient(135deg, var(--nfa-navy) 0%, var(--nfa-navy-light) 100%);
   color: #fff; flex-shrink: 0;
 }
@@ -206,7 +211,12 @@ a { color: inherit; }
 .autocomplete-list div:hover { background: var(--surface-2); }
 
 /* ---------- PIN Pad ---------- */
-.pin-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; background: var(--nfa-navy); position: relative; overflow: hidden; }
+.pin-screen {
+  min-height: 100vh; min-height: 100dvh; min-height: calc(var(--app-vh, 1vh) * 100);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: calc(24px + env(safe-area-inset-top, 0px)) calc(24px + env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) calc(24px + env(safe-area-inset-left, 0px));
+  background: var(--nfa-navy); position: relative; overflow: hidden; overflow-y: auto;
+}
 .pin-dots { display: flex; gap: 14px; margin: 26px 0 34px; }
 .pin-dot { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.5); transition: all 150ms var(--ease); }
 .pin-dot.filled { background: var(--nfa-gold); border-color: var(--nfa-gold); transform: scale(1.15); }
@@ -237,7 +247,7 @@ a { color: inherit; }
 .modal-close { border: none; background: var(--surface-2); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; color: var(--text); }
 
 /* ---------- Toast ---------- */
-#toast-host { position: fixed; top: 14px; left: 0; right: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+#toast-host { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 0; right: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; padding: 0 16px; }
 .toast {
   background: var(--nfa-navy); color: #fff; padding: 11px 18px; border-radius: 30px; font-size: 13.5px;
   font-weight: 600; box-shadow: var(--shadow-lg); animation: popIn 220ms var(--ease); max-width: 88%; text-align: center;
