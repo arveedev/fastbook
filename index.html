@@ -52,10 +52,19 @@
 <script src="js/app.js"></script>
 
 <script>
+  // IMPORTANT: A previous version of this app registered a Service Worker for
+  // offline support. If your device visited it before, that old Service Worker
+  // is still installed and may be serving STALE cached files (old CSS/JS) even
+  // after this page is updated. This block actively finds and removes it so
+  // your device always gets the latest version. Once the app is stable for
+  // production rollout, offline caching can be safely re-enabled — see sw.js.
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => { /* offline-first still works via Dexie */ });
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      registrations.forEach((reg) => reg.unregister());
     });
+  }
+  if ('caches' in window) {
+    caches.keys().then((keys) => keys.forEach((key) => caches.delete(key)));
   }
 </script>
 </body>

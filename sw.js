@@ -1,9 +1,17 @@
 /**
- * NFA PASSBOOK — Service Worker
- * Caches the app shell for full offline operation. All data reads/writes
- * happen through Dexie.js (IndexedDB), which is independent of this cache.
+ * NFA PASSBOOK — Service Worker (currently NOT registered — see index.html)
+ *
+ * This file is intentionally not being registered right now. During active
+ * development, a Service Worker's cache can serve stale files to a returning
+ * device even after you deploy fixes, which is confusing to debug. Once the
+ * app is stable and ready for field rollout, re-enable it by restoring the
+ * registration block in index.html (see the comment left there).
+ *
+ * IMPORTANT when you do re-enable it: bump CACHE_NAME below (e.g. to 'v3')
+ * every time you ship a change to any cached file, or returning devices will
+ * keep serving the old cached version indefinitely.
  */
-const CACHE_NAME = 'nfa-passbook-v1';
+const CACHE_NAME = 'nfa-passbook-v2';
 const APP_SHELL = [
   './index.html',
   './manifest.json',

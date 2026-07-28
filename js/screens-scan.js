@@ -51,23 +51,44 @@ async function startScanner() {
     scanStream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: { ideal: 'environment' },
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
+        advanced: [{ focusMode: 'continuous' }]
       }
     });
     video.srcObject = scanStream;
+
     // Explicitly start playback — relying on the `autoplay` attribute alone is
     // unreliable on some mobile browsers once getUserMedia resolves asynchronously.
-    try { await video.play(); } catch (playErr) { /* some browsers auto-play already */ }
-    statusEl.textContent = '';
+    try {
+      await video.play();
+    } catch (playErr) {
+      statusEl.innerHTML = `<span style="color:var(--danger);">Camera preview could not start (${playErr.message}). Tap the field below to retry, or use manual lookup.</span>`;
+      return;
+    }
+    statusEl.textContent = 'Starting camera feed...';
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const MAX_DIM = 900; // cap resolution for consistent, fast, reliable decoding
+    const startedAt = Date.now();
+    let stallWarningShown = false;
+    let framesProcessed = 0;
 
     const tick = () => {
-      if (!video.videoWidth) { scanRAF = requestAnimationFrame(tick); return; }
       if (scanPaused) { scanRAF = requestAnimationFrame(tick); return; }
+
+      if (!video.videoWidth) {
+        // The camera stream never produced a usable frame. Rather than looping
+        // forever in silence, surface this to the user after a short grace period.
+        if (!stallWarningShown && Date.now() - startedAt > 6000) {
+          stallWarningShown = true;
+          statusEl.innerHTML = `<span style="color:var(--warning);">Camera feed hasn't started yet. If your camera light is on but nothing appears, try closing other apps using the camera, or reload this page.</span>`;
+        }
+        scanRAF = requestAnimationFrame(tick);
+        return;
+      }
+
+      if (framesProcessed === 0) statusEl.textContent = '';
+      framesProcessed++;
 
       const scale = Math.min(1, MAX_DIM / Math.max(video.videoWidth, video.videoHeight));
       canvas.width = Math.round(video.videoWidth * scale);
