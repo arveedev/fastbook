@@ -15,6 +15,14 @@ const SYNC_TABLE_MAP = {
   systemSettings: 'SystemSettings'
 };
 
+const PRIMARY_KEY_FIELDS = {
+  farmers: 'passbook_id',
+  warehouses: 'warehouse_id',
+  deliveries: 'delivery_id',
+  users: 'user_id',
+  systemSettings: 'setting_key'
+};
+
 // Settings that are specific to THIS device/browser and must never be pushed
 // to, or overwritten from, the shared backend (e.g. each device connects to
 // the backend independently; theme is a personal display preference).
@@ -48,7 +56,10 @@ async function parseJsonResponse(res) {
   }
 }
 
-/** Runs a full pull (delta) + push cycle. Returns a summary object. */
+/** Runs a full pull (delta) + push cycle. Pulling first ensures a device
+ *  (especially one syncing for the very first time) sees the authoritative
+ *  server state before pushing anything, so a fresh device's own local
+ *  defaults can never clobber real data another device already published. */
 async function runSync(logFn = () => {}) {
   if (syncInProgress) return { status: 'busy' };
   const url = await getGasUrl();
@@ -58,8 +69,8 @@ async function runSync(logFn = () => {}) {
   syncInProgress = true;
   try {
     logFn('Connecting to backend...');
-    const pushResult = await pushLocalChanges(url, logFn);
     const pullResult = await pullRemoteChanges(url, logFn);
+    const pushResult = await pushLocalChanges(url, logFn);
     return { status: 'success', pushed: pushResult, pulled: pullResult };
   } catch (err) {
     logFn('Sync error: ' + err.message);
@@ -79,24 +90,44 @@ async function pushLocalChanges(url, logFn) {
 
   logFn(`Pushing ${queued.length} local change(s)...`);
   const payload = {};
-  const includedIds = [];
+  const idsToDelete = [];
+
   for (const item of queued) {
+    let parsed;
+    try { parsed = JSON.parse(item.payload); } catch (e) { idsToDelete.push(item.id); continue; }
+
     // Never push device-local settings (e.g. this device's own backend URL, theme).
-    if (item.table_name === 'systemSettings') {
-      let parsed;
-      try { parsed = JSON.parse(item.payload); } catch (e) { parsed = null; }
-      if (parsed && DEVICE_LOCAL_SETTING_KEYS.includes(parsed.setting_key)) continue;
+    if (item.table_name === 'systemSettings' && DEVICE_LOCAL_SETTING_KEYS.includes(parsed.setting_key)) {
+      idsToDelete.push(item.id);
+      continue;
     }
+
+    // Staleness check: if the pull that just ran (runSync pulls before pushing)
+    // already changed this exact record, the server's version wins — drop our
+    // queued snapshot instead of re-clobbering the data we just accepted. This
+    // is what protects a brand-new device's freshly-seeded local defaults from
+    // overwriting real data another device already published to the backend,
+    // even if the new device's system clock happens to read later.
+    const pkField = PRIMARY_KEY_FIELDS[item.table_name];
+    if (pkField && db[item.table_name]) {
+      const pkValue = parsed[pkField];
+      const currentLocal = await db[item.table_name].get(pkValue);
+      if (currentLocal && currentLocal.last_updated !== parsed.last_updated) {
+        idsToDelete.push(item.id);
+        continue;
+      }
+    }
+
     const sheetName = SYNC_TABLE_MAP[item.table_name] || item.table_name;
     if (!payload[sheetName]) payload[sheetName] = [];
-    payload[sheetName].push(JSON.parse(item.payload));
-    includedIds.push(item.id);
+    payload[sheetName].push(parsed);
+    idsToDelete.push(item.id);
   }
 
   if (Object.keys(payload).length === 0) {
-    // Nothing left to push after filtering out device-local settings — still
-    // clear the queue of those local-only entries so it doesn't grow forever.
-    await db.syncQueue.bulkDelete(queued.map(q => q.id));
+    // Nothing left to push after filtering — still clear the queue of those
+    // local-only / superseded entries so it doesn't grow forever.
+    await db.syncQueue.bulkDelete(idsToDelete);
     logFn('No local changes to push.');
     return { count: 0 };
   }
@@ -109,7 +140,7 @@ async function pushLocalChanges(url, logFn) {
   const data = await parseJsonResponse(res);
 
   if (data.status === 'success') {
-    await db.syncQueue.bulkDelete(queued.map(q => q.id));
+    await db.syncQueue.bulkDelete(idsToDelete);
     logFn(`Push complete: ${data.summary.inserted} inserted, ${data.summary.updated} updated.`);
   } else {
     throw new Error(data.message || 'Push sync failed');

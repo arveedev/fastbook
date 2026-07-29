@@ -43,7 +43,7 @@ async function initializeLocalDB() {
   const userCount = await db.users.count();
   if (userCount === 0) {
     const pinHash = await sha256('123456');
-    await db.users.put({
+    const adminUser = {
       user_id: 'USR-0001',
       pin_hash: pinHash,
       full_name: 'System Administrator',
@@ -51,7 +51,9 @@ async function initializeLocalDB() {
       status: 'Active',
       last_updated: nowIso,
       is_deleted: false
-    });
+    };
+    await db.users.put(adminUser);
+    await queueSync('users', 'upsert', adminUser);
   }
 
   // Seed default System Settings if empty
@@ -70,7 +72,12 @@ async function initializeLocalDB() {
       ['LAST_SYNC_TIMESTAMP', '']
     ];
     for (const [key, value] of defaults) {
-      await db.systemSettings.put({ setting_key: key, setting_value: value, last_updated: nowIso });
+      const record = { setting_key: key, setting_value: value, last_updated: nowIso };
+      await db.systemSettings.put(record);
+      // Device-local keys never get pushed to the shared backend.
+      if (!DEVICE_LOCAL_SETTING_KEYS.includes(key)) {
+        await queueSync('systemSettings', 'upsert', record);
+      }
     }
   }
 
@@ -84,7 +91,9 @@ async function initializeLocalDB() {
       { warehouse_id: 'WH-0004', warehouse_name: 'Guinobatan Transport Terminal', province: 'Albay', capacity_bags: 20000, status: 'Active' }
     ];
     for (const wh of starterWarehouses) {
-      await db.warehouses.put({ ...wh, last_updated: nowIso, is_deleted: false });
+      const record = { ...wh, last_updated: nowIso, is_deleted: false };
+      await db.warehouses.put(record);
+      await queueSync('warehouses', 'upsert', record);
     }
   }
 }
@@ -98,8 +107,9 @@ async function getSetting(key, fallback = '') {
 }
 
 async function setSetting(key, value) {
-  await db.systemSettings.put({ setting_key: key, setting_value: String(value), last_updated: new Date().toISOString() });
-  await queueSync('SystemSettings', 'upsert', { setting_key: key, setting_value: String(value) });
+  const record = { setting_key: key, setting_value: String(value), last_updated: new Date().toISOString() };
+  await db.systemSettings.put(record);
+  await queueSync('systemSettings', 'upsert', record);
 }
 
 /** Like setSetting, but for device-local preferences (e.g. THEME_MODE, this
