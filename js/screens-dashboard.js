@@ -7,6 +7,11 @@ function isSameDay(a, b) {
 
 SCREEN_RENDERERS.dashboard = async function (container) {
   container.innerHTML = `<div class="content"><div class="center" style="padding-top:60px;"><div class="loader dark" style="margin:0 auto;"></div></div></div>`;
+  await renderDashboardBody(container);
+};
+
+async function renderDashboardBody(container) {
+  const unit = getWeightUnit();
 
   const [farmers, deliveries, warehouses, settings] = await Promise.all([
     db.farmers.filter(f => !f.is_deleted).toArray(),
@@ -15,23 +20,22 @@ SCREEN_RENDERERS.dashboard = async function (container) {
     getAllSettings()
   ]);
 
-  const bagWeight = Number(settings.BAG_WEIGHT_KG || 50);
   const now = new Date();
   const activeSeason = await getActiveSeason();
   const currentYear = now.getFullYear();
 
   const todayDeliveries = deliveries.filter(d => isSameDay(new Date(d.date_timestamp), now));
   const todayBags = todayDeliveries.reduce((s, d) => s + Number(d.net_bags_equivalent || d.num_bags || 0), 0);
-  const todayMT = todayDeliveries.reduce((s, d) => s + Number(d.net_kilos || 0), 0) / 1000;
+  const todayKilos = todayDeliveries.reduce((s, d) => s + Number(d.net_kilos || 0), 0);
   const todayFarmers = new Set(todayDeliveries.map(d => d.passbook_id)).size;
 
   const seasonDeliveries = deliveries.filter(d => {
     const dt = new Date(d.date_timestamp);
     return dt.getFullYear() === currentYear && seasonOfDate(d.date_timestamp) === activeSeason;
   });
-  const seasonActualMT = seasonDeliveries.reduce((s, d) => s + Number(d.net_kilos || 0), 0) / 1000;
+  const seasonActualKilos = seasonDeliveries.reduce((s, d) => s + Number(d.net_kilos || 0), 0);
   const targetMT = Number(settings.TARGET_PROCUREMENT_MT || 50000);
-  const progressPct = targetMT > 0 ? Math.min(100, (seasonActualMT / targetMT) * 100) : 0;
+  const progressPct = targetMT > 0 ? Math.min(100, ((seasonActualKilos / 1000) / targetMT) * 100) : 0;
 
   // Provincial breakdown (province derived from farmer's farm_province)
   const farmerMap = {};
@@ -43,20 +47,24 @@ SCREEN_RENDERERS.dashboard = async function (container) {
     const prov = f ? f.farm_province : 'Unknown';
     if (!provinceStats[prov]) provinceStats[prov] = { today: 0, month: 0, year: 0 };
     const dt = new Date(d.date_timestamp);
-    const mt = Number(d.net_kilos || 0) / 1000;
+    const kilos = Number(d.net_kilos || 0);
     if (dt.getFullYear() === currentYear) {
-      provinceStats[prov].year += mt;
-      if (dt.getMonth() === now.getMonth()) provinceStats[prov].month += mt;
-      if (isSameDay(dt, now)) provinceStats[prov].today += mt;
+      provinceStats[prov].year += kilos;
+      if (dt.getMonth() === now.getMonth()) provinceStats[prov].month += kilos;
+      if (isSameDay(dt, now)) provinceStats[prov].today += kilos;
     }
   });
 
-  // Per-warehouse ranking (active season)
+  // Per-warehouse ranking (active season) — bags + weight
   const warehouseStats = {};
   seasonDeliveries.forEach(d => {
-    warehouseStats[d.warehouse_name] = (warehouseStats[d.warehouse_name] || 0) + Number(d.net_bags_equivalent || d.num_bags || 0);
+    if (!warehouseStats[d.warehouse_name]) warehouseStats[d.warehouse_name] = { bags: 0, kilos: 0 };
+    warehouseStats[d.warehouse_name].bags += Number(d.net_bags_equivalent || d.num_bags || 0);
+    warehouseStats[d.warehouse_name].kilos += Number(d.net_kilos || 0);
   });
-  const warehouseRanking = Object.entries(warehouseStats).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const warehouseRanking = Object.entries(warehouseStats).sort((a, b) => b[1].bags - a[1].bags).slice(0, 8);
+  const topWarehouseBags = warehouseRanking.length ? warehouseRanking[0][1].bags : 0;
+  const medal = ['🥇', '🥈', '🥉'];
 
   // 14-day trend
   const trendDays = [];
@@ -81,18 +89,28 @@ SCREEN_RENDERERS.dashboard = async function (container) {
   // Latest transactions
   const latest = [...deliveries].sort((a, b) => new Date(b.date_timestamp) - new Date(a.date_timestamp)).slice(0, 10);
 
+  const seasonIcon = activeSeason === 'SUMMER' ? ICONS_SEASON.sunny : ICONS_SEASON.storm;
+
   container.innerHTML = `
     <div class="content stagger">
+      <div class="flex-between mb-14">
+        <div class="season-pop-badge ${activeSeason === 'SUMMER' ? 'summer' : 'main'}">
+          ${seasonIcon}
+          <span>${seasonLabel(activeSeason)}</span>
+        </div>
+        ${renderWeightUnitToggle('dash-unit-toggle')}
+      </div>
+
       <div class="stat-grid mb-14">
         <div class="stat-box" style="animation-delay:0ms">
           <div class="label">Today's Procurement</div>
           <div class="value">${formatComma(todayBags)} <span style="font-size:12px;font-weight:600;">bags</span></div>
-          <div class="text-sm text-muted mt-8">${formatComma(todayMT.toFixed(2))} MT · ${todayFarmers} farmer(s)</div>
+          <div class="text-sm text-muted mt-8">${formatWeightValue(todayKilos, unit)} ${weightUnitLabel(unit)} · ${todayFarmers} farmer(s)</div>
         </div>
         <div class="stat-box" style="animation-delay:40ms">
           <div class="label">Active Season Progress</div>
           <div class="value green">${progressPct.toFixed(1)}%</div>
-          <div class="text-sm text-muted mt-8">${formatComma(seasonActualMT.toFixed(2))} / ${formatComma(targetMT)} MT</div>
+          <div class="text-sm text-muted mt-8">${formatWeightValue(seasonActualKilos, 'MT')} / ${formatComma(targetMT)} MT</div>
         </div>
       </div>
 
@@ -109,11 +127,11 @@ SCREEN_RENDERERS.dashboard = async function (container) {
         <div class="card-title">Procurement Volume by Province</div>
         <div class="table-wrap">
           <table class="data-table">
-            <thead><tr><th>Province</th><th>Today (MT)</th><th>Month (MT)</th><th>Year (MT)</th></tr></thead>
+            <thead><tr><th>Province</th><th>Today (${weightUnitLabel(unit)})</th><th>Month (${weightUnitLabel(unit)})</th><th>Year (${weightUnitLabel(unit)})</th></tr></thead>
             <tbody>
               ${Object.entries(provinceStats).length === 0 ? `<tr><td colspan="4" class="text-muted">No records yet</td></tr>` :
                 Object.entries(provinceStats).sort((a, b) => b[1].year - a[1].year).map(([prov, s]) => `
-                <tr><td>${prov}</td><td>${formatComma(s.today.toFixed(2))}</td><td>${formatComma(s.month.toFixed(2))}</td><td>${formatComma(s.year.toFixed(2))}</td></tr>
+                <tr><td>${prov}</td><td>${formatWeightValue(s.today, unit)}</td><td>${formatWeightValue(s.month, unit)}</td><td>${formatWeightValue(s.year, unit)}</td></tr>
               `).join('')}
             </tbody>
           </table>
@@ -121,12 +139,21 @@ SCREEN_RENDERERS.dashboard = async function (container) {
       </div>
 
       <div class="card" style="animation-delay:160ms">
-        <div class="card-title">Per-Warehouse Ranking (Active Season)</div>
+        <div class="card-title">🏆 Top Warehouse Ranking (Active Season)</div>
         ${warehouseRanking.length === 0 ? `<p class="text-muted text-sm">No deliveries recorded this season.</p>` :
-          warehouseRanking.map(([wh, bags], i) => `
-          <div class="flex-between" style="padding:7px 0; border-bottom:1px solid var(--border);">
-            <span class="text-sm"><b>${i + 1}.</b> ${wh}</span>
-            <span class="badge badge-navy">${formatComma(bags)} bags</span>
+          warehouseRanking.map(([wh, s], i) => `
+          <div class="leaderboard-row ${i < 3 ? 'top-rank' : ''}">
+            <span class="rank-marker">${medal[i] || (i + 1)}</span>
+            <div class="rank-info">
+              <div class="rank-name">${wh}</div>
+              <div class="progress-track" style="height:7px; margin-top:4px;">
+                <div class="progress-fill" style="width:${topWarehouseBags ? (s.bags / topWarehouseBags) * 100 : 0}%"></div>
+              </div>
+            </div>
+            <div class="rank-values">
+              <span class="badge badge-navy">${formatComma(s.bags)} bags</span>
+              <span class="text-muted" style="font-size:10.5px; margin-top:3px;">${formatWeightValue(s.kilos, unit)} ${weightUnitLabel(unit)}</span>
+            </div>
           </div>
         `).join('')}
       </div>
@@ -169,4 +196,6 @@ SCREEN_RENDERERS.dashboard = async function (container) {
       </div>
     </div>
   `;
-};
+
+  bindWeightUnitToggle('dash-unit-toggle', () => renderDashboardBody(container));
+}

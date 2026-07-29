@@ -2,8 +2,10 @@
  * NFA PASSBOOK — Delta Synchronization Engine
  * Talks to a Google Apps Script Web App (see /gas/Code.gs) configured
  * by the Admin in Settings. The app is fully functional offline without
- * this being configured — sync is an optional cloud-backup / multi-device
- * feature layered on top of the local Dexie database.
+ * this being configured — sync runs automatically in the background
+ * whenever a backend URL is set and the device is online, keeping every
+ * user's data (and Admin-configured settings) converged with Google Sheets
+ * without anyone needing to press a button.
  */
 const SYNC_TABLE_MAP = {
   farmers: 'Farmers',
@@ -13,7 +15,14 @@ const SYNC_TABLE_MAP = {
   systemSettings: 'SystemSettings'
 };
 
+// Settings that are specific to THIS device/browser and must never be pushed
+// to, or overwritten from, the shared backend (e.g. each device connects to
+// the backend independently; theme is a personal display preference).
+const DEVICE_LOCAL_SETTING_KEYS = ['GAS_WEBAPP_URL', 'THEME_MODE', 'LAST_SYNC_TIMESTAMP'];
+
 let syncInProgress = false;
+let backgroundSyncTimer = null;
+let mutationSyncDebounce = null;
 
 function isOnline() {
   return navigator.onLine;
@@ -21,6 +30,22 @@ function isOnline() {
 
 async function getGasUrl() {
   return await getSetting('GAS_WEBAPP_URL', '');
+}
+
+/** Safely parses a fetch Response as JSON, producing a clear error instead of
+ *  a cryptic "Unexpected token '<'" when the backend returns an HTML page
+ *  (e.g. a Google login/error page from a misconfigured or undeployed
+ *  Apps Script Web App URL). */
+async function parseJsonResponse(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    if (text.trim().startsWith('<')) {
+      throw new Error('Backend returned a webpage instead of data. Double-check the Web App URL in Settings, and that the Apps Script deployment access is set to "Anyone".');
+    }
+    throw new Error('Backend returned an unreadable response: ' + text.slice(0, 120));
+  }
 }
 
 /** Runs a full pull (delta) + push cycle. Returns a summary object. */
@@ -54,10 +79,26 @@ async function pushLocalChanges(url, logFn) {
 
   logFn(`Pushing ${queued.length} local change(s)...`);
   const payload = {};
+  const includedIds = [];
   for (const item of queued) {
+    // Never push device-local settings (e.g. this device's own backend URL, theme).
+    if (item.table_name === 'systemSettings') {
+      let parsed;
+      try { parsed = JSON.parse(item.payload); } catch (e) { parsed = null; }
+      if (parsed && DEVICE_LOCAL_SETTING_KEYS.includes(parsed.setting_key)) continue;
+    }
     const sheetName = SYNC_TABLE_MAP[item.table_name] || item.table_name;
     if (!payload[sheetName]) payload[sheetName] = [];
     payload[sheetName].push(JSON.parse(item.payload));
+    includedIds.push(item.id);
+  }
+
+  if (Object.keys(payload).length === 0) {
+    // Nothing left to push after filtering out device-local settings — still
+    // clear the queue of those local-only entries so it doesn't grow forever.
+    await db.syncQueue.bulkDelete(queued.map(q => q.id));
+    logFn('No local changes to push.');
+    return { count: 0 };
   }
 
   const res = await fetch(url, {
@@ -65,11 +106,10 @@ async function pushLocalChanges(url, logFn) {
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ action: 'syncPush', payload })
   });
-  const data = await res.json();
+  const data = await parseJsonResponse(res);
 
   if (data.status === 'success') {
-    const ids = queued.map(q => q.id);
-    await db.syncQueue.bulkDelete(ids);
+    await db.syncQueue.bulkDelete(queued.map(q => q.id));
     logFn(`Push complete: ${data.summary.inserted} inserted, ${data.summary.updated} updated.`);
   } else {
     throw new Error(data.message || 'Push sync failed');
@@ -84,7 +124,7 @@ async function pullRemoteChanges(url, logFn) {
 
   const qs = new URLSearchParams({ action: 'getInitialData', since: since || '' });
   const res = await fetch(`${url}?${qs.toString()}`, { method: 'GET' });
-  const data = await res.json();
+  const data = await parseJsonResponse(res);
 
   if (data.status !== 'success') throw new Error(data.message || 'Pull sync failed');
 
@@ -94,8 +134,11 @@ async function pullRemoteChanges(url, logFn) {
       const localTable = Object.keys(SYNC_TABLE_MAP).find(k => SYNC_TABLE_MAP[k] === sheetName);
       if (!localTable || !rows.length) continue;
       for (const row of rows) {
+        // Never let a remote row overwrite this device's own local-only settings.
+        if (localTable === 'systemSettings' && DEVICE_LOCAL_SETTING_KEYS.includes(row.setting_key)) continue;
+
+        const pk = Object.keys(row)[0];
         if (row.is_deleted === true || row.is_deleted === 'TRUE') {
-          const pk = Object.keys(row)[0];
           await db[localTable].delete(row[pk]);
         } else {
           await db[localTable].put(row);
@@ -105,7 +148,7 @@ async function pullRemoteChanges(url, logFn) {
     }
   });
 
-  await setSetting('LAST_SYNC_TIMESTAMP', data.timestamp);
+  await setLocalSetting('LAST_SYNC_TIMESTAMP', data.timestamp);
   logFn(`Pull complete: ${mergedCount} record(s) merged.`);
   return { count: mergedCount };
 }
@@ -115,7 +158,7 @@ async function triggerRemoteRepair() {
   const url = await getGasUrl();
   if (!url) throw new Error('No backend URL configured in Settings.');
   const res = await fetch(`${url}?action=initDB`, { method: 'GET' });
-  return await res.json();
+  return await parseJsonResponse(res);
 }
 
 /** Authenticates a PIN against the remote backend (used as a fallback / cross-device check). */
@@ -127,7 +170,30 @@ async function authenticateRemote(pinHash) {
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ action: 'authenticatePin', payload: { pin_hash: pinHash } })
   });
-  return await res.json();
+  return await parseJsonResponse(res);
+}
+
+/* ---------------------------------------------------------------------- *
+ *  AUTOMATIC BACKGROUND SYNC
+ *  Runs silently on an interval, and shortly after any local data change,
+ *  so every device (and Google Sheets) converge without manual action.
+ * ---------------------------------------------------------------------- */
+const BACKGROUND_SYNC_INTERVAL_MS = 45000;
+
+function startBackgroundSync() {
+  if (backgroundSyncTimer) clearInterval(backgroundSyncTimer);
+  backgroundSyncTimer = setInterval(() => {
+    runSync().catch(() => {});
+  }, BACKGROUND_SYNC_INTERVAL_MS);
+}
+
+/** Called by queueSync() after every local create/update so changes reach
+ *  the backend within a few seconds instead of waiting for the next interval. */
+function scheduleSyncSoon() {
+  clearTimeout(mutationSyncDebounce);
+  mutationSyncDebounce = setTimeout(() => {
+    runSync().catch(() => {});
+  }, 4000);
 }
 
 // Auto-sync opportunistically whenever the browser regains connectivity

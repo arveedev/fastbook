@@ -28,6 +28,7 @@ const APP_SHELL = [
   './js/screens-passbook-list.js',
   './js/screens-passbook-form.js',
   './js/screens-passbook-detail.js',
+  './js/screens-scan-result.js',
   './js/screens-scan.js',
   './js/screens-reports.js',
   './js/screens-settings.js',

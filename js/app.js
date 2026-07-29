@@ -11,11 +11,11 @@ const AppState = {
 };
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', roles: ['Admin', 'Officer'], icon: 'grid' },
-  { id: 'passbooks', label: 'Passbooks', roles: ['Admin', 'Officer'], icon: 'book' },
-  { id: 'scan', label: 'Scan QR', roles: ['Admin', 'Officer'], icon: 'qr' },
-  { id: 'reports', label: 'Reports', roles: ['Admin', 'Officer'], icon: 'chart' },
-  { id: 'settings', label: 'Settings', roles: ['Admin', 'Officer'], icon: 'gear' }
+  { id: 'dashboard', label: 'Dashboard', roles: ['Admin', 'Warehouse Staff'], icon: 'grid' },
+  { id: 'passbooks', label: 'Passbooks', roles: ['Admin', 'Warehouse Staff'], icon: 'book' },
+  { id: 'scan', label: 'Scan QR', roles: ['Admin', 'Warehouse Staff'], icon: 'qr' },
+  { id: 'reports', label: 'Reports', roles: ['Admin', 'Warehouse Staff'], icon: 'chart' },
+  { id: 'settings', label: 'Settings', roles: ['Admin', 'Warehouse Staff'], icon: 'gear' }
 ];
 
 const ICONS = {
@@ -41,6 +41,22 @@ function icon(name, size = 18) {
   return (ICONS[name] || '').replace('<svg ', `<svg width="${size}" height="${size}" `);
 }
 
+const ICONS_SEASON = {
+  sunny: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <circle cx="12" cy="12" r="5.5" fill="#FFB300" stroke="#FF8F00" stroke-width="1"/>
+    <g stroke="#FF8F00" stroke-width="2" stroke-linecap="round">
+      <path d="M12 1.5v3"/><path d="M12 19.5v3"/><path d="M1.5 12h3"/><path d="M19.5 12h3"/>
+      <path d="M4.4 4.4l2.1 2.1"/><path d="M17.5 17.5l2.1 2.1"/><path d="M4.4 19.6l2.1-2.1"/><path d="M17.5 6.5l2.1-2.1"/>
+    </g>
+  </svg>`,
+  storm: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <path d="M6.5 17a4.5 4.5 0 0 1-.7-8.94A5.5 5.5 0 0 1 16.3 6.9 4 4 0 0 1 17.5 15" fill="#90A4AE" stroke="#607D8B" stroke-width="1"/>
+    <path d="M6.5 17h11" stroke="#607D8B" stroke-width="1" fill="none"/>
+    <path d="M11.2 15.5l-2 4M15.2 15.5l-2 4" stroke="#4FC3F7" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M13 15.5l-1.6 2.7h2.2l-1.4 2.6" stroke="#FFD54F" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </svg>`
+};
+
 /* ---------------------------------------------------------------------- *
  *  BOOTSTRAP
  * ---------------------------------------------------------------------- */
@@ -59,9 +75,12 @@ async function bootApp() {
     renderLoginScreen();
   }
 
-  // opportunistic background sync on load if configured & online
+  // Automatic background sync: runs immediately if configured & online, then
+  // keeps running silently on an interval so the app and Google Sheets stay
+  // converged without anyone needing to press a "Sync Now" button.
   const gasUrl = await getSetting('GAS_WEBAPP_URL', '');
   if (gasUrl && isOnline()) runSync().catch(() => {});
+  startBackgroundSync();
 }
 
 /* ---------------------------------------------------------------------- *
@@ -71,7 +90,6 @@ async function renderAppShell() {
   const root = document.getElementById('app-root');
   const settings = await getAllSettings();
   root.innerHTML = `
-    <div class="celestial-layer" id="celestial-layer"></div>
     <div class="topbar">
       <div class="logo-badge">NFA</div>
       <div class="title-block">
@@ -81,6 +99,7 @@ async function renderAppShell() {
       <button class="icon-btn" id="theme-toggle-btn" title="Toggle theme">${icon(AppState.theme === 'dark' ? 'sun' : 'moon', 17)}</button>
       <button class="icon-btn" id="logout-btn" title="Logout">${icon('logout', 17)}</button>
     </div>
+    <div class="sky-banner" id="sky-banner"></div>
     <div id="season-badge-host"></div>
     <div id="screen-container" style="position:relative; flex:1; overflow:hidden;"></div>
     <div class="bottom-nav" id="bottom-nav"></div>
@@ -94,6 +113,7 @@ async function renderAppShell() {
   await renderCelestialBackground();
   await renderSeasonBadge();
   renderBottomNav();
+  startCelestialClock();
 }
 
 async function renderSeasonBadge() {
@@ -123,45 +143,103 @@ function renderBottomNav() {
 }
 
 /* ---------------------------------------------------------------------- *
- *  SEASONAL CELESTIAL BACKGROUND ENGINE
+ *  SEASONAL SKY BANNER — sun/moon rise & set along a real time-of-day arc
  * ---------------------------------------------------------------------- */
+let celestialClockTimer = null;
+
+/** Returns { visible, fraction } — fraction 0=rising at horizon, 0.5=peak, 1=setting at horizon. */
+function computeCelestialFraction(isDark) {
+  const now = new Date();
+  const h = now.getHours() + now.getMinutes() / 60;
+  if (!isDark) {
+    // Sun visible 6:00–18:00
+    if (h < 6 || h > 18) return { visible: false, fraction: 0 };
+    return { visible: true, fraction: (h - 6) / 12 };
+  } else {
+    // Moon visible 18:00–06:00 (wraps past midnight)
+    if (h >= 6 && h <= 18) return { visible: false, fraction: 0 };
+    const hoursSince18 = h >= 18 ? h - 18 : h + 6;
+    return { visible: true, fraction: hoursSince18 / 12 };
+  }
+}
+
+function positionCelestialBody(el, isDark) {
+  const { visible, fraction } = computeCelestialFraction(isDark);
+  const f = Math.max(0, Math.min(1, fraction));
+  const leftPct = 8 + f * 78;               // travels left→right across the banner
+  const arcHeight = 52;                      // px of vertical arc travel
+  const baseline = 58;                       // px from top at horizon (rise/set)
+  const topPx = baseline - Math.sin(f * Math.PI) * arcHeight;
+  el.style.left = leftPct + '%';
+  el.style.top = topPx + 'px';
+  el.style.opacity = visible ? '1' : '0';
+}
+
 async function renderCelestialBackground() {
-  const layer = document.getElementById('celestial-layer');
-  if (!layer) return;
+  const banner = document.getElementById('sky-banner');
+  if (!banner) return;
   const season = await getActiveSeason();
   const isDark = AppState.theme === 'dark';
   const skyClass = `sky-${season === 'SUMMER' ? 'summer' : 'main'}-${isDark ? 'dark' : 'light'}`;
-  layer.className = `celestial-layer ${skyClass}`;
+  banner.className = `sky-banner ${skyClass}`;
 
   const bodyClass = isDark ? 'moon-icon' : 'sun-icon';
-  layer.innerHTML = `<div class="celestial-body ${bodyClass}" id="celestial-body"></div>`;
+  banner.innerHTML = `<div class="celestial-body celestial-rising ${bodyClass}" id="celestial-body"></div>`;
+  const bodyEl = document.getElementById('celestial-body');
+  positionCelestialBody(bodyEl, isDark);
 
   if (season === 'MAIN') {
-    // Main Cropping Season: overcast + rain effect
+    // Main Cropping Season: overcast clouds + rain + occasional lightning flash
+    const cloudLayout = [
+      { left: '4%', top: '14px', w: 64, h: 22 },
+      { left: '38%', top: '8px', w: 84, h: 26 },
+      { left: '70%', top: '18px', w: 58, h: 20 }
+    ];
+    cloudLayout.forEach(c => {
+      const cloud = document.createElement('div');
+      cloud.className = 'sky-cloud';
+      cloud.style.cssText = `left:${c.left}; top:${c.top}; width:${c.w}px; height:${c.h}px;`;
+      banner.appendChild(cloud);
+    });
+
     const rainHost = document.createElement('div');
     rainHost.style.cssText = 'position:absolute;inset:0;overflow:hidden;';
-    for (let i = 0; i < 34; i++) {
+    for (let i = 0; i < 26; i++) {
       const drop = document.createElement('div');
       drop.className = 'raindrop';
       drop.style.left = Math.random() * 100 + '%';
-      drop.style.animationDuration = (0.7 + Math.random() * 0.6) + 's';
+      drop.style.animationDuration = (0.6 + Math.random() * 0.5) + 's';
       drop.style.animationDelay = (Math.random() * 2) + 's';
-      drop.style.opacity = 0.18;
       rainHost.appendChild(drop);
     }
-    layer.appendChild(rainHost);
+    banner.appendChild(rainHost);
+
+    const flash = document.createElement('div');
+    flash.className = 'lightning-flash';
+    flash.style.animationDelay = Math.random() * 4 + 's';
+    banner.appendChild(flash);
   }
+}
+
+/** Keeps the sun/moon drifting along its arc in real time while the app is open. */
+function startCelestialClock() {
+  if (celestialClockTimer) clearInterval(celestialClockTimer);
+  celestialClockTimer = setInterval(() => {
+    const bodyEl = document.getElementById('celestial-body');
+    if (bodyEl) positionCelestialBody(bodyEl, AppState.theme === 'dark');
+  }, 60000);
 }
 
 async function toggleTheme() {
   const body = document.getElementById('celestial-body');
   if (body) {
-    body.classList.add(AppState.theme === 'dark' ? 'celestial-hide-up' : 'celestial-hide-down');
+    body.classList.remove('celestial-rising');
+    body.classList.add('celestial-setting');
   }
   setTimeout(async () => {
     AppState.theme = AppState.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', AppState.theme);
-    await setSetting('THEME_MODE', AppState.theme);
+    await setLocalSetting('THEME_MODE', AppState.theme);
     document.getElementById('theme-toggle-btn').innerHTML = icon(AppState.theme === 'dark' ? 'sun' : 'moon', 17);
     await renderCelestialBackground();
   }, 260);

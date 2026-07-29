@@ -31,6 +31,14 @@ async function sha256(message) {
 async function initializeLocalDB() {
   const nowIso = new Date().toISOString();
 
+  // Migration: rename legacy 'Officer' role to 'Warehouse Staff'
+  const legacyOfficers = await db.users.filter(u => u.role === 'Officer').toArray();
+  for (const u of legacyOfficers) {
+    u.role = 'Warehouse Staff';
+    u.last_updated = nowIso;
+    await db.users.put(u);
+  }
+
   // Seed default Administrator account (PIN: 123456) if Users table empty
   const userCount = await db.users.count();
   if (userCount === 0) {
@@ -92,6 +100,13 @@ async function getSetting(key, fallback = '') {
 async function setSetting(key, value) {
   await db.systemSettings.put({ setting_key: key, setting_value: String(value), last_updated: new Date().toISOString() });
   await queueSync('SystemSettings', 'upsert', { setting_key: key, setting_value: String(value) });
+}
+
+/** Like setSetting, but for device-local preferences (e.g. THEME_MODE, this
+ *  device's own backend URL) that must never be pushed to, or overwritten
+ *  by, the shared cloud backend. */
+async function setLocalSetting(key, value) {
+  await db.systemSettings.put({ setting_key: key, setting_value: String(value), last_updated: new Date().toISOString() });
 }
 
 async function getAllSettings() {
@@ -201,6 +216,7 @@ async function queueSync(tableName, action, payload) {
     payload: JSON.stringify(payload),
     timestamp: new Date().toISOString()
   });
+  if (typeof scheduleSyncSoon === 'function') scheduleSyncSoon();
 }
 
 /* ---------------------------------------------------------------------- *
@@ -220,8 +236,55 @@ async function getAutoCompleteSuggestions(fieldName) {
 }
 
 /* ---------------------------------------------------------------------- *
- *  LIVE COMMA FORMATTING
+ *  WEIGHT UNIT PREFERENCE (KG / MT) — device-local display preference
  * ---------------------------------------------------------------------- */
+function getWeightUnit() {
+  return localStorage.getItem('nfa_weight_unit') || 'KG';
+}
+
+function setWeightUnit(unit) {
+  localStorage.setItem('nfa_weight_unit', unit);
+}
+
+/** Converts a kilogram value into the currently selected display unit and
+ *  returns a formatted string WITHOUT the unit suffix (caller adds label). */
+function formatWeightValue(kilos, unit) {
+  unit = unit || getWeightUnit();
+  const n = Number(kilos) || 0;
+  if (unit === 'MT') {
+    return formatComma((n / 1000).toFixed(2));
+  }
+  return formatComma(Math.round(n * 100) / 100);
+}
+
+function weightUnitLabel(unit) {
+  unit = unit || getWeightUnit();
+  return unit === 'MT' ? 'MT' : 'kg';
+}
+
+/** Renders a small KG/MT segmented toggle. Call bindWeightUnitToggle(id, onChange)
+ *  after inserting the returned HTML to wire up its click behavior. */
+function renderWeightUnitToggle(id) {
+  const unit = getWeightUnit();
+  return `
+    <div class="segmented" id="${id}" style="width:auto; display:inline-flex;">
+      <button type="button" data-v="KG" class="${unit === 'KG' ? 'active' : ''}" style="padding:6px 14px; font-size:11.5px;">KG</button>
+      <button type="button" data-v="MT" class="${unit === 'MT' ? 'active' : ''}" style="padding:6px 14px; font-size:11.5px;">MT</button>
+    </div>`;
+}
+
+function bindWeightUnitToggle(id, onChange) {
+  const wrap = document.getElementById(id);
+  if (!wrap) return;
+  wrap.querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => {
+      wrap.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      setWeightUnit(btn.dataset.v);
+      onChange(btn.dataset.v);
+    };
+  });
+}
 function formatComma(num) {
   if (num === null || num === undefined || num === '') return '';
   const n = Number(String(num).replace(/,/g, ''));

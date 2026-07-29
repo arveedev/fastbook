@@ -51,30 +51,59 @@ deactivate/replace the default one for security.
 - Automatic serial control number generation (`NFA{Region}-{Branch}{YY}-{FB|MB}-{seq}`)
 - Automatic seasonal quota calculation (Hectarage × 100 bags, or Admin custom
   override), with automatic Summer/Main season detection and reset
-- QR code generation and CR80-size printable Passbook ID cards
-- Live camera QR scanning (falls back to manual serial/RSBSA lookup if the
-  camera is unavailable)
+- Professionally redesigned QR code ID cards (CR80 size) with a gradient
+  header, type ribbon, watermark, and serial/validity footer — printable
+  directly from any Passbook
+- Live camera QR scanning with a real timeout + error message if the camera
+  feed stalls (falls back to manual serial/RSBSA lookup either way)
+- **Condensed scan-result screen**: scanning a Passbook shows only what's
+  needed in the field — identity, seasonal balance, and full **delivery
+  history** — with "View Full Passbook Details" one tap away
 - Delivery recording with the 8 official Palay variety codes, live
   comma-formatted bag/kilo entry, auto net-bag-equivalent calculation, and
-  seasonal balance validation (blocked for regular users, Admin override with
-  required audit comment if exceeded)
+  seasonal balance validation (blocked for Warehouse Staff, Admin override
+  with required audit comment if exceeded)
+- **KG / MT unit toggle** (defaults to KG) available on the Dashboard and
+  every Report, applied consistently to all weight figures
 - Real-time dashboard: today's totals, season target progress, provincial
-  breakdown, warehouse ranking, 14-day trend, top municipalities, latest
-  transactions stream
-- Printable A4 reports: Master Farmer Roster, Seasonal Procurement Delivery
-  Log, Warehouse Summary
-- Admin: Warehouse management, User account management, Region/Branch/Target
-  configuration, season override
-- Dynamic day/night, Summer/Main-season backgrounds with sun/moon transition
-  animation and a rain overlay during the Main Cropping Season
-- Light/Dark theme toggle
+  breakdown, a medal-ranked **Top Warehouse leaderboard**, 14-day trend, top
+  municipalities, latest transactions stream
+- **Sortable, filterable reports**: every report table's columns are
+  click-to-sort (ascending/descending); the Delivery Log additionally
+  supports a From/To date-range filter; Warehouse Summary shows bags **and**
+  net weight (KG/MT) for Today/Month/Season
+- Admin: Warehouse management, User account management (roles: **Admin** /
+  **Warehouse Staff**), Region/Branch/Target configuration, season override
+- A genuinely **visible** sky banner beneath the header showing the sun/moon
+  actually rising and setting along a real time-of-day arc, plus vivid
+  season-specific colors and icons (☀️ sunny gradient for Summer Cropping
+  Season, 🌩️ stormy gradient with rain + lightning for Main Cropping Season)
+- Light/Dark theme toggle (device-local preference, never overwritten by sync)
 
-## 4. Optional: Google Sheets cloud sync
+## 4. Roles
 
-The app works completely offline without this. If you want a shared
-cloud backup / multi-device sync layer:
+- **Admin** — full access: all Settings tabs (General, Warehouses, Users,
+  Sync & Backend), quota overrides, DB repair.
+- **Warehouse Staff** — Dashboard, Passbooks, Scan, Reports, and a read-only
+  General settings view. Sync & Backend, Warehouses, and Users management are
+  hidden — syncing still happens automatically in the background regardless
+  of role, it's just not user-configurable from a Staff account.
 
-1. Create a new Google Sheet.
+## 5. Optional: Google Sheets cloud sync
+
+The app works completely offline without this. If configured, **syncing is
+fully automatic** — no button required:
+- Immediately after every local change (a few seconds' debounce)
+- Every 45 seconds in the background
+- Whenever the device regains connectivity
+
+Branch-level settings an Admin configures (region, branch, procurement
+target, bag weight, season override) are pushed to Google Sheets and pulled
+automatically by every Warehouse Staff device, so everyone stays in sync
+without manual steps. Device-only preferences (theme, and each device's own
+backend URL) are deliberately never synced.
+
+Setup:
 2. **Extensions → Apps Script**, delete the placeholder code, and paste in
    the contents of `gas/Code.gs` from this project.
 3. **Deploy → New deployment → Web app**

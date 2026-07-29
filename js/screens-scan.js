@@ -34,7 +34,7 @@ SCREEN_RENDERERS.scan = async function (container) {
     const farmer = await db.farmers.get(q) || await db.farmers.where('rsbsa_no').equals(q).first();
     if (farmer) {
       stopScanner();
-      navigate('passbookDetail', { id: farmer.passbook_id });
+      navigate('scanResult', { id: farmer.passbook_id });
     } else {
       showToast('No matching Passbook found.', 'error');
     }
@@ -137,5 +137,5 @@ async function handleQrDetected(rawText) {
   if (navigator.vibrate) navigator.vibrate([50, 40, 50]);
   stopScanner();
   showToast(`Passbook found: ${buildDisplayName(farmer)}`, 'success');
-  navigate('passbookDetail', { id: farmer.passbook_id });
+  navigate('scanResult', { id: farmer.passbook_id });
 }

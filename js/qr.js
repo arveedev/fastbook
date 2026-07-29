@@ -30,27 +30,38 @@ async function printPassbookId(farmer) {
   const name = buildDisplayName(farmer);
   const allowance = await computeSeasonalAllowance(farmer);
   const printArea = document.getElementById('print-area');
+  const typeLabel = farmer.passbook_type === 'Master' ? 'MASTER / FO PASSBOOK' : 'INDIVIDUAL FARMER';
+  const year = new Date().getFullYear();
 
   printArea.innerHTML = `
     <div class="id-card">
       <div class="id-header">
         <div class="badge-logo">NFA</div>
-        <div class="txt">NATIONAL FOOD AUTHORITY — REGION ${settings.REGION_CODE}<br>${(settings.BRANCH_NAME || '').toUpperCase()} BRANCH · FARMER'S PASSBOOK ID</div>
+        <div class="txt"><b>NATIONAL FOOD AUTHORITY</b>REGION ${settings.REGION_CODE} · ${(settings.BRANCH_NAME || '').toUpperCase()} BRANCH</div>
+        <div class="type-ribbon">${typeLabel}</div>
       </div>
       <div class="id-body">
+        <div class="id-watermark"></div>
         <div class="id-left">
-          <b>${farmer.passbook_id}</b>
-          Name: ${name}<br>
-          RSBSA: ${farmer.rsbsa_no}<br>
-          Address: ${farmer.farm_municipality}, ${farmer.farm_province}<br>
-          Hectarage: ${formatComma(farmer.hectarage)} Ha<br>
-          Per Season Quota: ${formatComma(allowance.totalQuotaBags)} Bags
+          <span class="id-name">${name}</span>
+          <div class="id-row"><span class="k">RSBSA</span><span>${farmer.rsbsa_no || '—'}</span></div>
+          <div class="id-row"><span class="k">Farm</span><span>${farmer.farm_municipality}, ${farmer.farm_province}</span></div>
+          <div class="id-row"><span class="k">Area</span><span>${formatComma(farmer.hectarage)} Ha · ${farmer.irrigated === 'Yes' ? 'Irrigated' : 'Rainfed'}</span></div>
+          <div class="id-row"><span class="k">Quota</span><span>${formatComma(allowance.totalQuotaBags)} bags / season</span></div>
+          <div class="id-row"><span class="k">Warehouse</span><span>${farmer.warehouse_assigned || '—'}</span></div>
         </div>
-        <div class="id-right" id="id-qr-host"></div>
+        <div class="id-right">
+          <div id="id-qr-host"></div>
+          <span class="scan-label">SCAN TO VERIFY</span>
+        </div>
+      </div>
+      <div class="id-footer">
+        <span class="serial">${farmer.passbook_id}</span>
+        <span>Valid: CY ${year}</span>
       </div>
     </div>
   `;
-  renderQrInto(document.getElementById('id-qr-host'), buildQrPayload(farmer), 108);
+  renderQrInto(document.getElementById('id-qr-host'), buildQrPayload(farmer), 96);
 
   setTimeout(() => window.print(), 150);
 }

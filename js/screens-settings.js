@@ -2,33 +2,38 @@
  * NFA PASSBOOK — System Settings, Warehouse & User Management (Admin)
  */
 SCREEN_RENDERERS.settings = async function (container, params) {
-  const activeTab = (params && params.tab) || 'general';
   const isAdmin = AppState.currentUser.role === 'Admin';
+  const activeTab = (params && params.tab) || 'general';
+  // Non-admins only ever see General (Sync & Backend and Warehouses/Users are Admin-only)
+  const resolvedTab = isAdmin ? activeTab : 'general';
 
   container.innerHTML = `
     <div class="content">
       <h2 style="font-size:16px;font-weight:800;margin-bottom:12px;">Settings</h2>
+      ${isAdmin ? `
       <div class="subtabs" id="settings-subtabs">
-        <button data-t="general" class="${activeTab === 'general' ? 'active' : ''}">General</button>
-        ${isAdmin ? `<button data-t="warehouses" class="${activeTab === 'warehouses' ? 'active' : ''}">Warehouses</button>` : ''}
-        ${isAdmin ? `<button data-t="users" class="${activeTab === 'users' ? 'active' : ''}">Users</button>` : ''}
-        <button data-t="sync" class="${activeTab === 'sync' ? 'active' : ''}">Sync &amp; Backend</button>
-      </div>
+        <button data-t="general" class="${resolvedTab === 'general' ? 'active' : ''}">General</button>
+        <button data-t="warehouses" class="${resolvedTab === 'warehouses' ? 'active' : ''}">Warehouses</button>
+        <button data-t="users" class="${resolvedTab === 'users' ? 'active' : ''}">Users</button>
+        <button data-t="sync" class="${resolvedTab === 'sync' ? 'active' : ''}">Sync &amp; Backend</button>
+      </div>` : ''}
       <div id="settings-host"></div>
     </div>
   `;
 
-  document.getElementById('settings-subtabs').addEventListener('click', (e) => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    navigate('settings', { tab: btn.dataset.t });
-  });
+  if (isAdmin) {
+    document.getElementById('settings-subtabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      navigate('settings', { tab: btn.dataset.t });
+    });
+  }
 
   const host = document.getElementById('settings-host');
-  if (activeTab === 'general') await renderGeneralSettings(host, isAdmin);
-  else if (activeTab === 'warehouses' && isAdmin) await renderWarehouseSettings(host);
-  else if (activeTab === 'users' && isAdmin) await renderUserSettings(host);
-  else await renderSyncSettings(host, isAdmin);
+  if (resolvedTab === 'general') await renderGeneralSettings(host, isAdmin);
+  else if (resolvedTab === 'warehouses' && isAdmin) await renderWarehouseSettings(host);
+  else if (resolvedTab === 'users' && isAdmin) await renderUserSettings(host);
+  else if (resolvedTab === 'sync' && isAdmin) await renderSyncSettings(host, isAdmin);
 };
 
 /* ---------------- GENERAL ---------------- */
@@ -211,7 +216,7 @@ function openUserEditor(existing, onDone) {
     <div class="field"><label>Full Name <span class="req">*</span></label><input type="text" id="us-name" value="${existing ? existing.full_name : ''}"></div>
     <div class="field"><label>Role <span class="req">*</span></label>
       <select id="us-role">
-        <option value="Officer" ${existing && existing.role === 'Officer' ? 'selected' : ''}>Procurement Officer / Warehouse Staff</option>
+        <option value="Warehouse Staff" ${existing && existing.role === 'Warehouse Staff' ? 'selected' : ''}>Warehouse Staff</option>
         <option value="Admin" ${existing && existing.role === 'Admin' ? 'selected' : ''}>Administrator</option>
       </select>
     </div>
@@ -255,16 +260,21 @@ function openUserEditor(existing, onDone) {
 async function renderSyncSettings(host, isAdmin) {
   const s = await getAllSettings();
   const queueCount = await db.syncQueue.count();
+  const configured = !!(s.GAS_WEBAPP_URL || '').trim();
   host.innerHTML = `
     <div class="card">
-      <div class="card-title">Cloud Backend Sync (Optional)</div>
-      <p class="text-sm text-muted mb-14">The app is fully functional offline. Configure a deployed Google Apps Script Web App URL here to enable cloud backup and delta sync across devices. See the included <code>gas/Code.gs</code> file for backend deployment instructions.</p>
+      <div class="card-title">Cloud Backend Sync</div>
+      <p class="text-sm text-muted mb-14">The app works fully offline. Once a backend URL is configured below, syncing happens <b>automatically in the background</b> — on every data change, every ${Math.round(BACKGROUND_SYNC_INTERVAL_MS / 1000)} seconds, and whenever the device reconnects. No manual action is needed. Branch settings (region, target, season override, etc.) configured here are pushed to Google Sheets and pulled by every Warehouse Staff device automatically. See the included <code>gas/Code.gs</code> file for backend deployment instructions.</p>
       <div class="field"><label>Google Apps Script Web App URL</label>
         <input type="text" id="s-gas-url" value="${s.GAS_WEBAPP_URL || ''}" placeholder="https://script.google.com/macros/s/XXXX/exec" ${isAdmin ? '' : 'disabled'}>
       </div>
       ${isAdmin ? `<button class="btn btn-primary btn-block" id="save-gas-url">Save Backend URL</button>` : ''}
       <div class="divider"></div>
       <div class="flex-between text-sm">
+        <span class="text-muted">Background sync</span>
+        <span class="badge ${configured ? 'badge-green' : 'badge-navy'}">${configured ? 'Active' : 'Not configured'}</span>
+      </div>
+      <div class="flex-between text-sm mt-8">
         <span class="text-muted">Pending local changes to sync</span>
         <span class="badge badge-navy">${queueCount}</span>
       </div>
@@ -276,15 +286,16 @@ async function renderSyncSettings(host, isAdmin) {
         <span class="text-muted">Connection status</span>
         <span class="badge ${navigator.onLine ? 'badge-green' : 'badge-danger'}">${navigator.onLine ? 'Online' : 'Offline'}</span>
       </div>
-      <button class="btn btn-outline btn-block mt-14" id="run-sync-now">${icon('sync', 16)} Sync Now</button>
+      <button class="btn btn-outline btn-block mt-14" id="run-sync-now">${icon('sync', 16)} Sync Now (force immediate sync)</button>
       <div id="sync-log" class="text-sm text-muted mt-8"></div>
     </div>
   `;
 
   if (isAdmin) {
     document.getElementById('save-gas-url').onclick = async () => {
-      await setSetting('GAS_WEBAPP_URL', document.getElementById('s-gas-url').value.trim());
-      showToast('Backend URL saved.', 'success');
+      await setLocalSetting('GAS_WEBAPP_URL', document.getElementById('s-gas-url').value.trim());
+      showToast('Backend URL saved. Syncing in the background now...', 'success');
+      runSync().catch(() => {});
     };
   }
 
