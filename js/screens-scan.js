@@ -47,13 +47,11 @@ async function startScanner() {
   const video = document.getElementById('scan-video');
   const statusEl = document.getElementById('scan-status');
   scanPaused = false;
+
+  scanStream = await acquireCameraStream(statusEl);
+  if (!scanStream) return; // acquireCameraStream already showed an error
+
   try {
-    scanStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        advanced: [{ focusMode: 'continuous' }]
-      }
-    });
     video.srcObject = scanStream;
 
     // Explicitly start playback — relying on the `autoplay` attribute alone is
@@ -71,7 +69,10 @@ async function startScanner() {
     const MAX_DIM = 900; // cap resolution for consistent, fast, reliable decoding
     const startedAt = Date.now();
     let stallWarningShown = false;
+    let noCodeHintShown = false;
     let framesProcessed = 0;
+    let consecutiveFrameErrors = 0;
+    let lastErrorMessage = '';
 
     const tick = () => {
       if (scanPaused) { scanRAF = requestAnimationFrame(tick); return; }
@@ -87,24 +88,73 @@ async function startScanner() {
         return;
       }
 
-      if (framesProcessed === 0) statusEl.textContent = '';
-      framesProcessed++;
+      // Every single frame is wrapped in try/catch. Without this, one thrown
+      // error on any frame (e.g. a transient camera resolution change) would
+      // silently kill this entire loop forever — the video preview and the
+      // purely-decorative CSS scan-line animation both keep looking "alive"
+      // with zero indication anything broke. This is almost certainly what
+      // was causing scans to hang indefinitely with no data and no error.
+      try {
+        if (framesProcessed === 0) statusEl.textContent = '';
+        framesProcessed++;
 
-      const scale = Math.min(1, MAX_DIM / Math.max(video.videoWidth, video.videoHeight));
-      canvas.width = Math.round(video.videoWidth * scale);
-      canvas.height = Math.round(video.videoHeight * scale);
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
-      if (code && code.data) {
-        handleQrDetected(code.data);
+        const scale = Math.min(1, MAX_DIM / Math.max(video.videoWidth, video.videoHeight));
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        if (canvas.width > 0 && canvas.height > 0) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+          if (code && code.data) {
+            handleQrDetected(code.data);
+            scanRAF = requestAnimationFrame(tick);
+            return;
+          }
+        }
+        consecutiveFrameErrors = 0;
+      } catch (frameErr) {
+        consecutiveFrameErrors++;
+        lastErrorMessage = frameErr.message;
+        if (consecutiveFrameErrors > 20) {
+          statusEl.innerHTML = `<span style="color:var(--danger);">Scanning stopped due to a repeated error (${lastErrorMessage}). Please use manual lookup below, or reload the page to retry.</span>`;
+          return; // stop the loop rather than spin forever on a broken state
+        }
       }
+
+      // Ongoing feedback if the camera is clearly working but nothing has
+      // been found for a while — better than leaving the user guessing.
+      if (!noCodeHintShown && framesProcessed > 60 && Date.now() - startedAt > 12000) {
+        noCodeHintShown = true;
+        statusEl.innerHTML = `<span class="text-muted">Still scanning (${framesProcessed} frames analyzed) — try moving closer, improving lighting, or holding the ID flat and steady.</span>`;
+      }
+
       scanRAF = requestAnimationFrame(tick);
     };
     scanRAF = requestAnimationFrame(tick);
   } catch (err) {
     statusEl.innerHTML = `<span style="color:var(--danger);">Camera access unavailable: ${err.message}. Use manual lookup below instead.</span>`;
   }
+}
+
+/** Requests the camera with a sensible ideal configuration, falling back to
+ *  progressively simpler constraints if the device/browser rejects them —
+ *  some browsers throw OverconstrainedError on options like `advanced`. */
+async function acquireCameraStream(statusEl) {
+  const attempts = [
+    { video: { facingMode: { ideal: 'environment' }, advanced: [{ focusMode: 'continuous' }] } },
+    { video: { facingMode: { ideal: 'environment' } } },
+    { video: true }
+  ];
+  let lastError = null;
+  for (const constraints of attempts) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  statusEl.innerHTML = `<span style="color:var(--danger);">Camera access unavailable: ${lastError ? lastError.message : 'unknown error'}. Use manual lookup below instead.</span>`;
+  return null;
 }
 
 function stopScanner() {

@@ -21,7 +21,7 @@ function renderQrInto(el, text, size = 180) {
     height: size,
     colorDark: '#000000',
     colorLight: '#ffffff',
-    correctLevel: QRCode.CorrectLevel.M
+    correctLevel: QRCode.CorrectLevel.H
   });
 }
 
@@ -61,7 +61,7 @@ async function printPassbookId(farmer) {
       </div>
     </div>
   `;
-  renderQrInto(document.getElementById('id-qr-host'), buildQrPayload(farmer), 96);
+  renderQrInto(document.getElementById('id-qr-host'), buildQrPayload(farmer), 108);
 
   setTimeout(() => window.print(), 150);
 }
