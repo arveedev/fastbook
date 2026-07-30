@@ -25,18 +25,36 @@ function renderQrInto(el, text, size = 180) {
   });
 }
 
-async function printPassbookId(farmer) {
-  const settings = await getAllSettings();
-  const name = buildDisplayName(farmer);
-  const allowance = await computeSeasonalAllowance(farmer);
-  const printArea = document.getElementById('print-area');
-  const typeLabel = farmer.passbook_type === 'Master' ? 'MASTER / FO PASSBOOK' : 'INDIVIDUAL FARMER';
-  const year = new Date().getFullYear();
+/** Simple circular seal-style emblem (grain stalk on a navy/gold seal) used
+ *  on the printed ID in place of a generic text badge. */
+function nfaSealSvg(size = 30) {
+  return `
+  <svg width="${size}" height="${size}" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="20" cy="20" r="19" fill="#FFCC00" stroke="#003366" stroke-width="2"/>
+    <circle cx="20" cy="20" r="14.5" fill="none" stroke="#003366" stroke-width="0.6"/>
+    <line x1="20" y1="30" x2="20" y2="11" stroke="#003366" stroke-width="1.4" stroke-linecap="round"/>
+    <circle cx="20" cy="10" r="1.4" fill="#003366"/>
+    <ellipse cx="17" cy="14.5" rx="2.1" ry="1.2" fill="#003366" transform="rotate(-32 17 14.5)"/>
+    <ellipse cx="23" cy="14.5" rx="2.1" ry="1.2" fill="#003366" transform="rotate(32 23 14.5)"/>
+    <ellipse cx="16.4" cy="18.5" rx="2.1" ry="1.2" fill="#003366" transform="rotate(-32 16.4 18.5)"/>
+    <ellipse cx="23.6" cy="18.5" rx="2.1" ry="1.2" fill="#003366" transform="rotate(32 23.6 18.5)"/>
+    <ellipse cx="15.8" cy="22.5" rx="2.1" ry="1.2" fill="#003366" transform="rotate(-32 15.8 22.5)"/>
+    <ellipse cx="24.2" cy="22.5" rx="2.1" ry="1.2" fill="#003366" transform="rotate(32 24.2 22.5)"/>
+  </svg>`;
+}
 
-  printArea.innerHTML = `
+/** Builds the inner HTML for one ID card (used twice per printed sheet). */
+async function buildIdCardHtml(farmer, settings, qrHostId) {
+  const name = buildDisplayName(farmer);
+  const typeLabel = farmer.passbook_type === 'Master' ? 'MASTER / FO' : 'INDIVIDUAL FARMER';
+  const birthDateFormatted = farmer.birth_date
+    ? new Date(farmer.birth_date + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+    : '—';
+
+  return `
     <div class="id-card">
       <div class="id-header">
-        <div class="badge-logo">NFA</div>
+        <div class="seal-logo">${nfaSealSvg(30)}</div>
         <div class="txt"><b>NATIONAL FOOD AUTHORITY</b>REGION ${settings.REGION_CODE} · ${(settings.BRANCH_NAME || '').toUpperCase()} BRANCH</div>
         <div class="type-ribbon">${typeLabel}</div>
       </div>
@@ -44,24 +62,36 @@ async function printPassbookId(farmer) {
         <div class="id-watermark"></div>
         <div class="id-left">
           <span class="id-name">${name}</span>
-          <div class="id-row"><span class="k">RSBSA</span><span>${farmer.rsbsa_no || '—'}</span></div>
-          <div class="id-row"><span class="k">Farm</span><span>${farmer.farm_municipality}, ${farmer.farm_province}</span></div>
-          <div class="id-row"><span class="k">Area</span><span>${formatComma(farmer.hectarage)} Ha · ${farmer.irrigated === 'Yes' ? 'Irrigated' : 'Rainfed'}</span></div>
-          <div class="id-row"><span class="k">Quota</span><span>${formatComma(allowance.totalQuotaBags)} bags / season</span></div>
-          <div class="id-row"><span class="k">Warehouse</span><span>${farmer.warehouse_assigned || '—'}</span></div>
+          <div class="id-row"><span class="k">RSBSA No.</span><span class="v">${farmer.rsbsa_no || '—'}</span></div>
+          <div class="id-row"><span class="k">Birthday</span><span class="v">${birthDateFormatted}</span></div>
+          <div class="id-row"><span class="k">Farm Addr.</span><span class="v">${farmer.farm_municipality}, ${farmer.farm_province}</span></div>
+          <div class="id-row"><span class="k">Land Area</span><span class="v">${formatComma(farmer.hectarage)} Ha · ${farmer.irrigated === 'Yes' ? 'Irrigated' : 'Rainfed'}</span></div>
         </div>
         <div class="id-right">
-          <div id="id-qr-host"></div>
-          <span class="scan-label">SCAN TO VERIFY</span>
+          <div id="${qrHostId}"></div>
         </div>
       </div>
       <div class="id-footer">
         <span class="serial">${farmer.passbook_id}</span>
-        <span>Valid: CY ${year}</span>
       </div>
     </div>
   `;
-  renderQrInto(document.getElementById('id-qr-host'), buildQrPayload(farmer), 108);
+}
+
+async function printPassbookId(farmer) {
+  const settings = await getAllSettings();
+  const printArea = document.getElementById('print-area');
+
+  // Two copies side by side (slim page margins) so one sheet yields a spare
+  // card and doesn't waste the rest of the page — cut apart after printing.
+  const card1 = await buildIdCardHtml(farmer, settings, 'id-qr-host-1');
+  const card2 = await buildIdCardHtml(farmer, settings, 'id-qr-host-2');
+
+  printArea.innerHTML = `<div class="id-print-sheet">${card1}${card2}</div>`;
+
+  const qrPayload = buildQrPayload(farmer);
+  renderQrInto(document.getElementById('id-qr-host-1'), qrPayload, 76);
+  renderQrInto(document.getElementById('id-qr-host-2'), qrPayload, 76);
 
   setTimeout(() => window.print(), 150);
 }
