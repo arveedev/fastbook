@@ -5,6 +5,14 @@ function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+/** Ensures a progress bar with real (nonzero) progress is always visibly
+ *  perceptible, even when the true percentage is tiny against a large
+ *  branch-wide target — without misrepresenting the displayed number. */
+function visibleBarWidth(pct) {
+  if (pct <= 0) return 0;
+  return Math.max(pct, 1.5);
+}
+
 SCREEN_RENDERERS.dashboard = async function (container) {
   container.innerHTML = `<div class="content"><div class="center" style="padding-top:60px;"><div class="loader dark" style="margin:0 auto;"></div></div></div>`;
   await renderDashboardBody(container);
@@ -19,6 +27,7 @@ async function renderDashboardBody(container) {
     db.warehouses.filter(w => !w.is_deleted).toArray(),
     getAllSettings()
   ]);
+  const bagWeight = Number(settings.BAG_WEIGHT_KG || 50);
 
   const now = new Date();
   const activeSeason = await getActiveSeason();
@@ -35,7 +44,8 @@ async function renderDashboardBody(container) {
   });
   const seasonActualKilos = seasonDeliveries.reduce((s, d) => s + Number(d.net_kilos || 0), 0);
   const targetMT = Number(settings.TARGET_PROCUREMENT_MT || 50000);
-  const progressPct = targetMT > 0 ? Math.min(100, ((seasonActualKilos / 1000) / targetMT) * 100) : 0;
+  const targetKilos = targetMT * 1000;
+  const progressPct = targetKilos > 0 ? Math.min(100, (seasonActualKilos / targetKilos) * 100) : 0;
 
   // Provincial breakdown (province derived from farmer's farm_province)
   const farmerMap = {};
@@ -104,23 +114,24 @@ async function renderDashboardBody(container) {
       <div class="stat-grid mb-14">
         <div class="stat-box" style="animation-delay:0ms">
           <div class="label">Today's Procurement</div>
-          <div class="value">${formatComma(todayBags)} <span style="font-size:12px;font-weight:600;">bags</span></div>
+          <div class="value">${formatComma(todayBags)} <span style="font-size:12px;font-weight:600;">Net Bags</span></div>
           <div class="text-sm text-muted mt-8">${formatWeightValue(todayKilos, unit)} ${weightUnitLabel(unit)} · ${todayFarmers} farmer(s)</div>
         </div>
         <div class="stat-box" style="animation-delay:40ms">
           <div class="label">Active Season Progress</div>
-          <div class="value green">${progressPct.toFixed(1)}%</div>
-          <div class="text-sm text-muted mt-8">${formatWeightValue(seasonActualKilos, 'MT')} / ${formatComma(targetMT)} MT</div>
+          <div class="value green">${progressPct.toFixed(unit === 'MT' ? 1 : 2)}%</div>
+          <div class="text-sm text-muted mt-8">${formatWeightValue(seasonActualKilos, unit)} / ${formatWeightValue(targetKilos, unit)} ${weightUnitLabel(unit)}</div>
         </div>
       </div>
 
       <div class="card" style="animation-delay:80ms">
         <div class="card-title">Branch Target Progress</div>
-        <div class="progress-track"><div class="progress-fill ${progressPct > 90 ? '' : progressPct > 60 ? 'warn' : ''}" style="width:${progressPct}%"></div></div>
+        <div class="progress-track"><div class="progress-fill ${progressPct > 90 ? '' : progressPct > 60 ? 'warn' : ''}" style="width:${visibleBarWidth(progressPct)}%"></div></div>
         <div class="flex-between mt-8 text-sm text-muted">
           <span>${seasonLabel(activeSeason)}</span>
-          <span>${progressPct.toFixed(1)}% of target</span>
+          <span>${progressPct.toFixed(unit === 'MT' ? 1 : 2)}% of target</span>
         </div>
+        <div class="text-sm text-muted mt-8">${formatWeightValue(seasonActualKilos, unit)} ${weightUnitLabel(unit)} delivered <span class="text-muted">(≈ ${formatComma(kilosToNetBags(seasonActualKilos, bagWeight))} Net Bags)</span> of ${formatWeightValue(targetKilos, unit)} ${weightUnitLabel(unit)} target</div>
       </div>
 
       <div class="card" style="animation-delay:120ms">
@@ -147,11 +158,11 @@ async function renderDashboardBody(container) {
             <div class="rank-info">
               <div class="rank-name">${wh}</div>
               <div class="progress-track" style="height:7px; margin-top:4px;">
-                <div class="progress-fill" style="width:${topWarehouseBags ? (s.bags / topWarehouseBags) * 100 : 0}%"></div>
+                <div class="progress-fill" style="width:${topWarehouseBags ? visibleBarWidth((s.bags / topWarehouseBags) * 100) : 0}%"></div>
               </div>
             </div>
             <div class="rank-values">
-              <span class="badge badge-navy">${formatComma(s.bags)} bags</span>
+              <span class="badge badge-navy">${formatComma(s.bags)} Net Bags</span>
               <span class="text-muted" style="font-size:10.5px; margin-top:3px;">${formatWeightValue(s.kilos, unit)} ${weightUnitLabel(unit)}</span>
             </div>
           </div>
@@ -163,7 +174,7 @@ async function renderDashboardBody(container) {
         <div class="bar-chart">
           ${trendDays.map(t => `
             <div class="bar-col">
-              <div class="bar" style="height:${(t.bags / maxTrend) * 100}%" title="${formatComma(t.bags)} bags"></div>
+              <div class="bar" style="height:${(t.bags / maxTrend) * 100}%" title="${formatComma(t.bags)} Net Bags"></div>
               <div class="bar-label">${t.date.getMonth() + 1}/${t.date.getDate()}</div>
             </div>
           `).join('')}
@@ -176,7 +187,7 @@ async function renderDashboardBody(container) {
           topMuni.map(([m, bags], i) => `
           <div class="flex-between" style="padding:7px 0; border-bottom:1px solid var(--border);">
             <span class="text-sm"><b>${i + 1}.</b> ${m}</span>
-            <span class="badge badge-green">${formatComma(bags)} bags</span>
+            <span class="badge badge-green">${formatComma(bags)} Net Bags</span>
           </div>
         `).join('')}
       </div>
@@ -190,7 +201,7 @@ async function renderDashboardBody(container) {
               <div class="text-sm" style="font-weight:700;">${d.display_name}</div>
               <div class="text-muted" style="font-size:11px;">${new Date(d.date_timestamp).toLocaleString()} · ${d.warehouse_name}</div>
             </div>
-            <span class="badge badge-gold">${formatComma(d.num_bags)} bags</span>
+            <span class="badge badge-gold">${formatComma(d.num_bags)} Net Bags</span>
           </div>
         `).join('')}
       </div>

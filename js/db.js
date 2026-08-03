@@ -269,7 +269,14 @@ function formatWeightValue(kilos, unit) {
 
 function weightUnitLabel(unit) {
   unit = unit || getWeightUnit();
-  return unit === 'MT' ? 'MT' : 'kg';
+  return unit === 'MT' ? 'Net MT' : 'Net KG';
+}
+
+/** Converts a kilogram value into its net-bags equivalent using the
+ *  configured standard bag weight (defaults to 50kg if not yet loaded). */
+function kilosToNetBags(kilos, bagWeightKg) {
+  const bw = Number(bagWeightKg) > 0 ? Number(bagWeightKg) : 50;
+  return Math.round((Number(kilos) || 0) / bw * 100) / 100;
 }
 
 /** Renders a small KG/MT segmented toggle. Call bindWeightUnitToggle(id, onChange)

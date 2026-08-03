@@ -20,7 +20,7 @@ async function openRecordDeliveryModal(farmer, onSaved) {
     <div class="card" style="background:var(--surface-2);box-shadow:none;">
       <div class="text-sm text-muted">Remaining Seasonal Balance</div>
       <div style="font-size:22px;font-weight:800;color:${allowance.remainingBalanceBags < 0 ? 'var(--danger)' : 'var(--palay-green)'};">
-        ${formatComma(allowance.remainingBalanceBags)} bags
+        ${formatComma(allowance.remainingBalanceBags)} Net Bags
       </div>
       <div class="progress-track mt-8">
         <div class="progress-fill ${allowance.deliveredBagsCount / allowance.totalQuotaBags > 0.9 ? 'danger' : allowance.deliveredBagsCount / allowance.totalQuotaBags > 0.7 ? 'warn' : ''}"
@@ -49,7 +49,7 @@ async function openRecordDeliveryModal(farmer, onSaved) {
       <div class="field">
         <label>Calculated Net Bags Equivalent</label>
         <input type="text" id="dl-net-bags" disabled value="0.00">
-        <div class="hint">Bag standard weight: ${bagWeight} kg. Net Kilograms auto-fills from bags, or enter manually.</div>
+        <div class="hint">Net weight per bag: ${bagWeight} kg. Net Kilograms auto-fills from bags, or enter manually.</div>
       </div>
       <div id="dl-warning"></div>
       <button type="submit" class="btn btn-primary btn-block mt-14">Record Delivery</button>
@@ -76,7 +76,7 @@ async function openRecordDeliveryModal(farmer, onSaved) {
     const warnHost = document.getElementById('dl-warning');
     if (netBags > allowance.remainingBalanceBags) {
       warnHost.innerHTML = `<div class="toast warn" style="position:static;display:block;text-align:left;margin:10px 0 0;animation:none;">
-        ⚠ This delivery (${formatComma(Math.round(netBags * 100) / 100)} bags) exceeds the remaining seasonal balance (${formatComma(allowance.remainingBalanceBags)} bags).
+        ⚠ This delivery (${formatComma(Math.round(netBags * 100) / 100)} Net Bags) exceeds the remaining seasonal balance (${formatComma(allowance.remainingBalanceBags)} Net Bags).
         ${AppState.currentUser.role === 'Admin' ? 'As Admin, you may override with an audit comment below.' : 'Standard users cannot complete this transaction.'}
       </div>
       ${AppState.currentUser.role === 'Admin' ? `
@@ -144,7 +144,7 @@ async function openRecordDeliveryModal(farmer, onSaved) {
     playConfirmationTone();
     if (navigator.vibrate) navigator.vibrate(80);
 
-    showToast(`Delivery recorded: ${formatComma(bags)} bags from ${displayName}.`, 'success');
+    showToast(`Delivery recorded: ${formatComma(bags)} Net Bags from ${displayName}.`, 'success');
     closeModal(backdrop);
     if (onSaved) onSaved();
   });

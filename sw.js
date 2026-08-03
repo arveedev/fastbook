@@ -34,6 +34,7 @@ const APP_SHELL = [
   './js/screens-settings.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/nfa-official-logo.png',
   'https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
   'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js'

@@ -141,7 +141,7 @@ SCREEN_RENDERERS.passbookForm = async function (container, params) {
           <div class="card-title">Land & Delivery Data</div>
           <div class="field"><label>Hectarage (Land Area, Ha) <span class="req">*</span></label>
             <input type="text" inputmode="decimal" id="f-hectarage" required value="${record.hectarage ? formatComma(record.hectarage) : ''}">
-            <div class="hint" id="quota-preview">Per-season quota auto-calculates as Hectarage × 100 net bags.</div>
+            <div class="hint" id="quota-preview">Per-season quota auto-calculates as Hectarage × 100 Net Bags.</div>
           </div>
           <div class="field"><label>Irrigated <span class="req">*</span></label>
             <div class="segmented" id="irrigated-toggle">

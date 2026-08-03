@@ -145,7 +145,7 @@ async function renderDeliveryLogReport(host) {
   `).join('');
   const printTableHtml = `
     <table style="width:100%;border-collapse:collapse;font-size:10.5px;">
-      <thead><tr style="background:#003366;color:#fff;"><th style="padding:6px;">Timestamp</th><th style="padding:6px;">Farmer / FO</th><th style="padding:6px;">RSBSA</th><th style="padding:6px;">Warehouse</th><th style="padding:6px;">Variety</th><th style="padding:6px;">Bags</th><th style="padding:6px;">${weightUnitLabel(unit)}</th></tr></thead>
+      <thead><tr style="background:#003366;color:#fff;"><th style="padding:6px;">Timestamp</th><th style="padding:6px;">Farmer / FO</th><th style="padding:6px;">RSBSA</th><th style="padding:6px;">Warehouse</th><th style="padding:6px;">Variety</th><th style="padding:6px;">Net Bags</th><th style="padding:6px;">${weightUnitLabel(unit)}</th></tr></thead>
       <tbody>${rowsHtml || `<tr><td colspan="7">No deliveries recorded.</td></tr>`}</tbody>
     </table>`;
 
@@ -159,7 +159,7 @@ async function renderDeliveryLogReport(host) {
       <button class="btn btn-outline btn-sm" id="flt-clear">Clear Dates</button>
     </div>
     <div class="stat-grid mb-14">
-      <div class="stat-box"><div class="label">Total Bags</div><div class="value">${formatComma(totalBags)}</div></div>
+      <div class="stat-box"><div class="label">Total Net Bags</div><div class="value">${formatComma(totalBags)}</div></div>
       <div class="stat-box"><div class="label">Total ${weightUnitLabel(unit)}</div><div class="value green">${formatWeightValue(totalKilos, unit)}</div></div>
     </div>
     <div class="card">
@@ -174,7 +174,7 @@ async function renderDeliveryLogReport(host) {
             <th>RSBSA</th>
             <th class="sortable-th" data-k="warehouse">Warehouse${sortArrow('deliveries', 'warehouse')}</th>
             <th class="sortable-th" data-k="variety">Variety${sortArrow('deliveries', 'variety')}</th>
-            <th class="sortable-th" data-k="bags">Bags${sortArrow('deliveries', 'bags')}</th>
+            <th class="sortable-th" data-k="bags">Net Bags${sortArrow('deliveries', 'bags')}</th>
             <th class="sortable-th" data-k="weight">${weightUnitLabel(unit)}${sortArrow('deliveries', 'weight')}</th>
           </tr></thead>
           <tbody>${rowsHtml || `<tr><td colspan="7" class="text-muted">No deliveries recorded.</td></tr>`}</tbody>
@@ -232,9 +232,9 @@ async function renderWarehouseSummaryReport(host) {
     <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <thead><tr style="background:#003366;color:#fff;">
         <th style="padding:5px;">Warehouse</th>
-        <th style="padding:5px;">Today (Bags)</th><th style="padding:5px;">Today (${weightUnitLabel(unit)})</th>
-        <th style="padding:5px;">Month (Bags)</th><th style="padding:5px;">Month (${weightUnitLabel(unit)})</th>
-        <th style="padding:5px;">Season (Bags)</th><th style="padding:5px;">Season (${weightUnitLabel(unit)})</th>
+        <th style="padding:5px;">Today (Net Bags)</th><th style="padding:5px;">Today (${weightUnitLabel(unit)})</th>
+        <th style="padding:5px;">Month (Net Bags)</th><th style="padding:5px;">Month (${weightUnitLabel(unit)})</th>
+        <th style="padding:5px;">Season (Net Bags)</th><th style="padding:5px;">Season (${weightUnitLabel(unit)})</th>
       </tr></thead>
       <tbody>${rowsHtml || `<tr><td colspan="7">No warehouses configured.</td></tr>`}</tbody>
     </table>`;
@@ -248,11 +248,11 @@ async function renderWarehouseSummaryReport(host) {
         <table class="data-table">
           <thead><tr>
             <th class="sortable-th" data-k="name">Warehouse${sortArrow('warehouse', 'name')}</th>
-            <th class="sortable-th" data-k="dayBags">Today Bags${sortArrow('warehouse', 'dayBags')}</th>
+            <th class="sortable-th" data-k="dayBags">Today Net Bags${sortArrow('warehouse', 'dayBags')}</th>
             <th class="sortable-th" data-k="dayKilos">Today ${weightUnitLabel(unit)}${sortArrow('warehouse', 'dayKilos')}</th>
-            <th class="sortable-th" data-k="monthBags">Month Bags${sortArrow('warehouse', 'monthBags')}</th>
+            <th class="sortable-th" data-k="monthBags">Month Net Bags${sortArrow('warehouse', 'monthBags')}</th>
             <th class="sortable-th" data-k="monthKilos">Month ${weightUnitLabel(unit)}${sortArrow('warehouse', 'monthKilos')}</th>
-            <th class="sortable-th" data-k="seasonBags">Season Bags${sortArrow('warehouse', 'seasonBags')}</th>
+            <th class="sortable-th" data-k="seasonBags">Season Net Bags${sortArrow('warehouse', 'seasonBags')}</th>
             <th class="sortable-th" data-k="seasonKilos">Season ${weightUnitLabel(unit)}${sortArrow('warehouse', 'seasonKilos')}</th>
           </tr></thead>
           <tbody>${rowsHtml || `<tr><td colspan="7" class="text-muted">No warehouses configured.</td></tr>`}</tbody>

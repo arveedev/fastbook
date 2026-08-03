@@ -25,24 +25,6 @@ function renderQrInto(el, text, size = 180) {
   });
 }
 
-/** Simple circular seal-style emblem (grain stalk on a navy/gold seal) used
- *  on the printed ID in place of a generic text badge. */
-function nfaSealSvg(size = 30) {
-  return `
-  <svg width="${size}" height="${size}" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="20" cy="20" r="19" fill="#FFCC00" stroke="#003366" stroke-width="2"/>
-    <circle cx="20" cy="20" r="14.5" fill="none" stroke="#003366" stroke-width="0.6"/>
-    <line x1="20" y1="30" x2="20" y2="11" stroke="#003366" stroke-width="1.4" stroke-linecap="round"/>
-    <circle cx="20" cy="10" r="1.4" fill="#003366"/>
-    <ellipse cx="17" cy="14.5" rx="2.1" ry="1.2" fill="#003366" transform="rotate(-32 17 14.5)"/>
-    <ellipse cx="23" cy="14.5" rx="2.1" ry="1.2" fill="#003366" transform="rotate(32 23 14.5)"/>
-    <ellipse cx="16.4" cy="18.5" rx="2.1" ry="1.2" fill="#003366" transform="rotate(-32 16.4 18.5)"/>
-    <ellipse cx="23.6" cy="18.5" rx="2.1" ry="1.2" fill="#003366" transform="rotate(32 23.6 18.5)"/>
-    <ellipse cx="15.8" cy="22.5" rx="2.1" ry="1.2" fill="#003366" transform="rotate(-32 15.8 22.5)"/>
-    <ellipse cx="24.2" cy="22.5" rx="2.1" ry="1.2" fill="#003366" transform="rotate(32 24.2 22.5)"/>
-  </svg>`;
-}
-
 /** Builds the inner HTML for one ID card (used twice per printed sheet). */
 async function buildIdCardHtml(farmer, settings, qrHostId) {
   const name = buildDisplayName(farmer);
@@ -54,7 +36,7 @@ async function buildIdCardHtml(farmer, settings, qrHostId) {
   return `
     <div class="id-card">
       <div class="id-header">
-        <div class="seal-logo">${nfaSealSvg(30)}</div>
+        <img class="seal-logo" src="icons/nfa-official-logo.png" alt="NFA" width="30" height="30">
         <div class="txt"><b>NATIONAL FOOD AUTHORITY</b>REGION ${settings.REGION_CODE} · ${(settings.BRANCH_NAME || '').toUpperCase()} BRANCH</div>
         <div class="type-ribbon">${typeLabel}</div>
       </div>
@@ -78,7 +60,48 @@ async function buildIdCardHtml(farmer, settings, qrHostId) {
   `;
 }
 
+/** Waits for every <img> inside a container to finish loading (or fail) —
+ *  printing before the logo image has loaded would leave it blank/broken. */
+function waitForImages(container) {
+  const imgs = Array.from(container.querySelectorAll('img'));
+  return Promise.all(imgs.map(img => {
+    if (img.complete) return Promise.resolve();
+    return new Promise(resolve => {
+      img.addEventListener('load', resolve, { once: true });
+      img.addEventListener('error', resolve, { once: true });
+    });
+  }));
+}
+
+/** Browsers add their own headers/footers (URL, date, page number) to every
+ *  printed page — this is a print-dialog setting the page has no way to
+ *  control via CSS or JS. We can only tell the person how to turn it off.
+ *  Most browsers remember that choice after the first time, so this only
+ *  needs to be shown once per device. */
+async function ensurePrintHeadersReminder() {
+  if (localStorage.getItem('nfa_print_reminder_dismissed') === 'true') return;
+  return new Promise((resolve) => {
+    const backdrop = openModal(`
+      <div class="modal-header"><h3>Before you print</h3></div>
+      <p class="text-sm" style="margin-bottom:14px;">Your browser's print dialog adds its own URL, date, and page number to every printout by default — this app cannot remove that. For a clean ID with nothing but the card:</p>
+      <ol style="font-size:13px; padding-left:18px; line-height:1.8; margin-bottom:16px;">
+        <li>In the print dialog, click <b>"More settings"</b></li>
+        <li>Turn <b>OFF "Headers and footers"</b></li>
+      </ol>
+      <p class="text-sm text-muted" style="margin-bottom:16px;">Most browsers remember this choice, so you'll likely only need to do it once.</p>
+      <button class="btn btn-primary btn-block" id="print-reminder-ok">Got it, continue to print</button>
+    `, { center: true });
+    document.getElementById('print-reminder-ok').onclick = () => {
+      localStorage.setItem('nfa_print_reminder_dismissed', 'true');
+      closeModal(backdrop);
+      resolve();
+    };
+  });
+}
+
 async function printPassbookId(farmer) {
+  await ensurePrintHeadersReminder();
+
   const settings = await getAllSettings();
   const printArea = document.getElementById('print-area');
 
@@ -93,11 +116,13 @@ async function printPassbookId(farmer) {
   renderQrInto(document.getElementById('id-qr-host-1'), qrPayload, 76);
   renderQrInto(document.getElementById('id-qr-host-2'), qrPayload, 76);
 
+  await waitForImages(printArea);
   setTimeout(() => window.print(), 150);
 }
 
 /** Prints a full-page A4 report given a title and an HTML table body. */
-function printReport(title, subtitle, tableHtml) {
+async function printReport(title, subtitle, tableHtml) {
+  await ensurePrintHeadersReminder();
   const printArea = document.getElementById('print-area');
   printArea.innerHTML = `
     <div class="report-page">

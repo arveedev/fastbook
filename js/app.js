@@ -15,7 +15,7 @@ const NAV_ITEMS = [
   { id: 'passbooks', label: 'Passbooks', roles: ['Admin', 'Warehouse Staff'], icon: 'book' },
   { id: 'scan', label: 'Scan QR', roles: ['Admin', 'Warehouse Staff'], icon: 'qr' },
   { id: 'reports', label: 'Reports', roles: ['Admin', 'Warehouse Staff'], icon: 'chart' },
-  { id: 'settings', label: 'Settings', roles: ['Admin', 'Warehouse Staff'], icon: 'gear' }
+  { id: 'settings', label: 'Settings', roles: ['Admin'], icon: 'gear' }
 ];
 
 const ICONS = {
@@ -97,10 +97,9 @@ async function renderAppShell() {
         <span>${getRegionName(settings.REGION_CODE || 'V')}</span>
       </div>
       <button class="icon-btn" id="theme-toggle-btn" title="Toggle theme">${icon(AppState.theme === 'dark' ? 'sun' : 'moon', 17)}</button>
-      <button class="icon-btn" id="logout-btn" title="Logout">${icon('logout', 17)}</button>
+      <button class="icon-btn" id="logout-btn" title="Logout (${AppState.currentUser.full_name} · ${AppState.currentUser.role})">${icon('logout', 17)}</button>
     </div>
     <div class="sky-banner" id="sky-banner"></div>
-    <div id="season-badge-host"></div>
     <div id="screen-container" style="position:relative; flex:1; overflow:hidden;"></div>
     <div class="bottom-nav" id="bottom-nav"></div>
     <div id="toast-host"></div>
@@ -111,33 +110,31 @@ async function renderAppShell() {
   document.getElementById('logout-btn').onclick = confirmLogout;
 
   await renderCelestialBackground();
-  await renderSeasonBadge();
   renderBottomNav();
   startCelestialClock();
-}
-
-async function renderSeasonBadge() {
-  const season = await getActiveSeason();
-  const host = document.getElementById('season-badge-host');
-  if (!host) return;
-  host.innerHTML = `
-    <div class="season-badge">
-      <span class="dot"></span>
-      ${seasonLabel(season)}
-      <span class="text-muted" style="margin-left:auto;">${AppState.currentUser.full_name} · ${AppState.currentUser.role}</span>
-    </div>`;
 }
 
 function renderBottomNav() {
   const nav = document.getElementById('bottom-nav');
   const role = AppState.currentUser.role;
-  nav.innerHTML = NAV_ITEMS.filter(i => i.roles.includes(role)).map(item => `
-    <button class="nav-item ${AppState.route === item.id ? 'active' : ''}" data-route="${item.id}">
-      ${icon(item.icon, 21)}
-      <span>${item.label}</span>
+  const leftItems = NAV_ITEMS.filter(i => i.roles.includes(role) && i.id !== 'scan');
+  const scanItem = NAV_ITEMS.find(i => i.id === 'scan');
+
+  nav.innerHTML = `
+    <div class="nav-left-group">
+      ${leftItems.map(item => `
+        <button class="nav-item ${AppState.route === item.id ? 'active' : ''}" data-route="${item.id}">
+          ${icon(item.icon, 21)}
+          <span>${item.label}</span>
+        </button>
+      `).join('')}
+    </div>
+    <button class="nav-scan-fab ${AppState.route === 'scan' ? 'active' : ''}" data-route="scan" title="Scan QR">
+      ${icon('qr', 24)}
+      <span>Scan</span>
     </button>
-  `).join('');
-  nav.querySelectorAll('.nav-item').forEach(btn => {
+  `;
+  nav.querySelectorAll('[data-route]').forEach(btn => {
     btn.onclick = () => navigate(btn.dataset.route);
   });
 }
@@ -291,8 +288,6 @@ async function navigate(routeId, params = {}) {
     existing.classList.add('screen-exit');
     setTimeout(() => existing.remove(), 220);
   }
-
-  await renderSeasonBadge();
 }
 
 /* ---------------------------------------------------------------------- *

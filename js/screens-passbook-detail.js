@@ -51,11 +51,11 @@ async function renderPassbookDetailBody(container, farmer) {
         <div class="card-title">Seasonal Delivery Panel</div>
         <span class="badge badge-gold mb-14" style="margin-bottom:10px;">${allowance.activeSeasonLabel}</span>
         <div class="stat-grid">
-          <div class="stat-box"><div class="label">Per Season Quota</div><div class="value">${formatComma(allowance.totalQuotaBags)}</div></div>
-          <div class="stat-box"><div class="label">Delivered This Season</div><div class="value green">${formatComma(allowance.deliveredBagsCount)}</div></div>
+          <div class="stat-box"><div class="label">Per Season Quota</div><div class="value">${formatComma(allowance.totalQuotaBags)} <span style="font-size:11px;font-weight:600;">Net Bags</span></div></div>
+          <div class="stat-box"><div class="label">Delivered This Season</div><div class="value green">${formatComma(allowance.deliveredBagsCount)} <span style="font-size:11px;font-weight:600;">Net Bags</span></div></div>
         </div>
         <div class="mt-14">
-          <div class="flex-between text-sm text-muted"><span>Remaining Balance</span><span><b style="color:${allowance.remainingBalanceBags < 0 ? 'var(--danger)' : 'var(--text)'}">${formatComma(allowance.remainingBalanceBags)} bags</b></span></div>
+          <div class="flex-between text-sm text-muted"><span>Remaining Balance</span><span><b style="color:${allowance.remainingBalanceBags < 0 ? 'var(--danger)' : 'var(--text)'}">${formatComma(allowance.remainingBalanceBags)} Net Bags</b></span></div>
           <div class="progress-track mt-8"><div class="progress-fill ${pct > 90 ? 'danger' : pct > 70 ? 'warn' : ''}" style="width:${pct}%"></div></div>
         </div>
       </div>

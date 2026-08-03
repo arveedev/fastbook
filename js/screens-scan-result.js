@@ -54,11 +54,11 @@ async function renderScanResultBody(container, farmer) {
         <div class="card-title">Seasonal Delivery Balance</div>
         <span class="badge badge-gold" style="margin-bottom:10px;">${allowance.activeSeasonLabel}</span>
         <div class="stat-grid">
-          <div class="stat-box"><div class="label">Quota</div><div class="value">${formatComma(allowance.totalQuotaBags)}</div></div>
-          <div class="stat-box"><div class="label">Delivered</div><div class="value green">${formatComma(allowance.deliveredBagsCount)}</div></div>
+          <div class="stat-box"><div class="label">Quota</div><div class="value">${formatComma(allowance.totalQuotaBags)} <span style="font-size:11px;font-weight:600;">Net Bags</span></div></div>
+          <div class="stat-box"><div class="label">Delivered</div><div class="value green">${formatComma(allowance.deliveredBagsCount)} <span style="font-size:11px;font-weight:600;">Net Bags</span></div></div>
         </div>
         <div class="mt-14">
-          <div class="flex-between text-sm text-muted"><span>Remaining Balance</span><span><b style="color:${allowance.remainingBalanceBags < 0 ? 'var(--danger)' : 'var(--text)'}">${formatComma(allowance.remainingBalanceBags)} bags</b></span></div>
+          <div class="flex-between text-sm text-muted"><span>Remaining Balance</span><span><b style="color:${allowance.remainingBalanceBags < 0 ? 'var(--danger)' : 'var(--text)'}">${formatComma(allowance.remainingBalanceBags)} Net Bags</b></span></div>
           <div class="progress-track mt-8"><div class="progress-fill ${pct > 90 ? 'danger' : pct > 70 ? 'warn' : ''}" style="width:${pct}%"></div></div>
         </div>
       </div>
@@ -84,7 +84,7 @@ async function renderScanResultBody(container, farmer) {
                 <div class="text-muted" style="font-size:11px;">${d.warehouse_name} · ${d.variety}</div>
               </div>
               <div style="text-align:right;">
-                <span class="badge badge-gold">${formatComma(d.num_bags)} bags</span>
+                <span class="badge badge-gold">${formatComma(d.num_bags)} Net Bags</span>
                 <div class="text-muted" style="font-size:10.5px; margin-top:3px;">${formatWeightValue(d.net_kilos, unit)} ${weightUnitLabel(unit)}</div>
               </div>
             </div>
