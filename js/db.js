@@ -64,7 +64,7 @@ async function initializeLocalDB() {
       ['REGION_CODE', 'V'],
       ['BRANCH_NAME', 'Albay'],
       ['BRANCH_CODE', 'ALB'],
-      ['TARGET_PROCUREMENT_MT', '50000'],
+      ['TARGET_PROCUREMENT_BAGS', '1000000'],
       ['SEASON_OVERRIDE', 'AUTO'],
       ['BAG_WEIGHT_KG', '50'],
       ['THEME_MODE', 'light'],
@@ -302,6 +302,20 @@ function bindWeightUnitToggle(id, onChange) {
     };
   });
 }
+
+/** Safely formats a date-only value (like birth_date) for display, regardless
+ *  of whether it arrived as a plain "YYYY-MM-DD" string or a full ISO
+ *  timestamp (which can happen if Google Sheets auto-converted the cell to
+ *  its own Date type during sync). Never throws or shows "Invalid Date". */
+function formatDateOnly(value, fallback = '—') {
+  if (!value) return fallback;
+  const str = String(value).trim();
+  if (!str) return fallback;
+  const d = str.includes('T') ? new Date(str) : new Date(str + 'T00:00:00');
+  if (isNaN(d.getTime())) return fallback;
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 function formatComma(num) {
   if (num === null || num === undefined || num === '') return '';
   const n = Number(String(num).replace(/,/g, ''));

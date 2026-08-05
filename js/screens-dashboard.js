@@ -43,8 +43,8 @@ async function renderDashboardBody(container) {
     return dt.getFullYear() === currentYear && seasonOfDate(d.date_timestamp) === activeSeason;
   });
   const seasonActualKilos = seasonDeliveries.reduce((s, d) => s + Number(d.net_kilos || 0), 0);
-  const targetMT = Number(settings.TARGET_PROCUREMENT_MT || 50000);
-  const targetKilos = targetMT * 1000;
+  const targetBags = Number(settings.TARGET_PROCUREMENT_BAGS || 1000000);
+  const targetKilos = targetBags * bagWeight;
   const progressPct = targetKilos > 0 ? Math.min(100, (seasonActualKilos / targetKilos) * 100) : 0;
 
   // Provincial breakdown (province derived from farmer's farm_province)
@@ -131,7 +131,7 @@ async function renderDashboardBody(container) {
           <span>${seasonLabel(activeSeason)}</span>
           <span>${progressPct.toFixed(unit === 'MT' ? 1 : 2)}% of target</span>
         </div>
-        <div class="text-sm text-muted mt-8">${formatWeightValue(seasonActualKilos, unit)} ${weightUnitLabel(unit)} delivered <span class="text-muted">(≈ ${formatComma(kilosToNetBags(seasonActualKilos, bagWeight))} Net Bags)</span> of ${formatWeightValue(targetKilos, unit)} ${weightUnitLabel(unit)} target</div>
+        <div class="text-sm text-muted mt-8">${formatComma(kilosToNetBags(seasonActualKilos, bagWeight))} / ${formatComma(targetBags)} Net Bags <span class="text-muted">(≈ ${formatWeightValue(seasonActualKilos, unit)} / ${formatWeightValue(targetKilos, unit)} ${weightUnitLabel(unit)})</span></div>
       </div>
 
       <div class="card" style="animation-delay:120ms">

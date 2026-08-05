@@ -17,9 +17,12 @@ async function openRecordDeliveryModal(farmer, onSaved) {
       <h3>Record New Delivery</h3>
       <button class="modal-close" id="rd-close">✕</button>
     </div>
+    <div class="text-sm text-muted" style="margin-bottom:12px; line-height:1.6;">
+      <b style="color:var(--text);">${displayName}</b> · RSBSA ${farmer.rsbsa_no}<br>${now.toLocaleString()}
+    </div>
     <div class="card" style="background:var(--surface-2);box-shadow:none;">
       <div class="text-sm text-muted">Remaining Seasonal Balance</div>
-      <div style="font-size:22px;font-weight:800;color:${allowance.remainingBalanceBags < 0 ? 'var(--danger)' : 'var(--palay-green)'};">
+      <div style="font-size:24px;font-weight:800;color:${allowance.remainingBalanceBags < 0 ? 'var(--danger)' : 'var(--palay-green)'};">
         ${formatComma(allowance.remainingBalanceBags)} Net Bags
       </div>
       <div class="progress-track mt-8">
@@ -27,24 +30,21 @@ async function openRecordDeliveryModal(farmer, onSaved) {
              style="width:${Math.min(100, (allowance.deliveredBagsCount / Math.max(1, allowance.totalQuotaBags)) * 100)}%"></div>
       </div>
     </div>
-    <form id="delivery-form">
-      <div class="field"><label>Date &amp; Timestamp</label><input type="text" value="${now.toLocaleString()}" disabled></div>
-      <div class="field"><label>Supplier Display Name</label><input type="text" value="${displayName}" disabled></div>
-      <div class="field"><label>RSBSA Number</label><input type="text" value="${farmer.rsbsa_no}" disabled></div>
+    <form id="delivery-form" class="mt-14">
       <div class="field"><label>Target Warehouse <span class="req">*</span></label>
-        <select id="dl-warehouse" required>
+        <select id="dl-warehouse" class="input-guided" required>
           ${warehouses.map(w => `<option value="${w.warehouse_name}" ${w.warehouse_name === farmer.warehouse_assigned ? 'selected' : ''}>${w.warehouse_name}</option>`).join('')}
         </select>
       </div>
       <div class="field"><label>Palay Variety <span class="req">*</span></label>
-        <select id="dl-variety" required>
+        <select id="dl-variety" class="input-guided" required>
           <option value="">Select Variety...</option>
           ${PALAY_VARIETIES.map(v => `<option value="${v}">${v}</option>`).join('')}
         </select>
       </div>
       <div class="two-col">
-        <div class="field"><label>Number of Bags <span class="req">*</span></label><input type="text" inputmode="numeric" id="dl-bags" required></div>
-        <div class="field"><label>Net Kilograms <span class="req">*</span></label><input type="text" inputmode="decimal" id="dl-kilos"></div>
+        <div class="field"><label>Number of Bags <span class="req">*</span></label><input type="text" inputmode="numeric" id="dl-bags" class="input-guided" required></div>
+        <div class="field"><label>Net Kilograms <span class="req">*</span></label><input type="text" inputmode="decimal" id="dl-kilos" class="input-guided"></div>
       </div>
       <div class="field">
         <label>Calculated Net Bags Equivalent</label>

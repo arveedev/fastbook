@@ -26,6 +26,9 @@
   setAppViewportHeight();
   window.addEventListener('resize', setAppViewportHeight);
   window.addEventListener('orientationchange', () => setTimeout(setAppViewportHeight, 100));
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', setAppViewportHeight);
+  }
 </script>
 <div id="app-root"></div>
 
@@ -44,6 +47,7 @@
 <script src="js/screens-dashboard.js"></script>
 <script src="js/screens-passbook-list.js"></script>
 <script src="js/screens-passbook-form.js"></script>
+<script src="js/screens-passbook-wizard.js"></script>
 <script src="js/screens-passbook-detail.js"></script>
 <script src="js/screens-scan-result.js"></script>
 <script src="js/screens-scan.js"></script>

@@ -45,7 +45,7 @@ async function renderGeneralSettings(host, isAdmin) {
       <div class="field"><label>Region Code</label><input type="text" id="s-region" value="${s.REGION_CODE || 'V'}" ${isAdmin ? '' : 'disabled'} maxlength="3" style="text-transform:uppercase;"></div>
       <div class="field"><label>Branch Name</label><input type="text" id="s-branch-name" value="${s.BRANCH_NAME || ''}" ${isAdmin ? '' : 'disabled'}></div>
       <div class="field"><label>Branch Code (3-letter)</label><input type="text" id="s-branch-code" value="${s.BRANCH_CODE || ''}" ${isAdmin ? '' : 'disabled'} maxlength="3" style="text-transform:uppercase;"></div>
-      <div class="field"><label>Active Season Procurement Target (Metric Tons)</label><input type="text" inputmode="decimal" id="s-target-mt" value="${formatComma(s.TARGET_PROCUREMENT_MT || 0)}" ${isAdmin ? '' : 'disabled'}></div>
+      <div class="field"><label>Active Season Procurement Target (Net Bags)</label><input type="text" inputmode="decimal" id="s-target-bags" value="${formatComma(s.TARGET_PROCUREMENT_BAGS || 0)}" ${isAdmin ? '' : 'disabled'}></div>
       <div class="field"><label>Standard Bag Weight (kg)</label><input type="text" inputmode="numeric" id="s-bag-weight" value="${s.BAG_WEIGHT_KG || 50}" ${isAdmin ? '' : 'disabled'}></div>
       <div class="field"><label>Season Override</label>
         <select id="s-season-override" ${isAdmin ? '' : 'disabled'}>
@@ -66,12 +66,12 @@ async function renderGeneralSettings(host, isAdmin) {
   `;
 
   if (isAdmin) {
-    attachLiveCommaFormatter(document.getElementById('s-target-mt'));
+    attachLiveCommaFormatter(document.getElementById('s-target-bags'));
     document.getElementById('save-general').onclick = async () => {
       await setSetting('REGION_CODE', document.getElementById('s-region').value.toUpperCase().trim());
       await setSetting('BRANCH_NAME', document.getElementById('s-branch-name').value.trim());
       await setSetting('BRANCH_CODE', document.getElementById('s-branch-code').value.toUpperCase().trim());
-      await setSetting('TARGET_PROCUREMENT_MT', unformatNumber(document.getElementById('s-target-mt').value));
+      await setSetting('TARGET_PROCUREMENT_BAGS', unformatNumber(document.getElementById('s-target-bags').value));
       await setSetting('BAG_WEIGHT_KG', unformatNumber(document.getElementById('s-bag-weight').value));
       await setSetting('SEASON_OVERRIDE', document.getElementById('s-season-override').value);
       showToast('Settings saved successfully.', 'success');

@@ -81,8 +81,8 @@ async function renderRosterReport(host) {
     <tr><td>${f.passbook_id}</td><td>${buildDisplayName(f)}</td><td>${f.rsbsa_no}</td><td>${formatComma(f.hectarage)}</td><td>${f.warehouse_assigned}</td></tr>
   `).join('');
   const printTableHtml = `
-    <table class="data-table" style="width:100%;border-collapse:collapse;font-size:11px;">
-      <thead><tr style="background:#003366;color:#fff;"><th style="padding:6px;">Control No.</th><th style="padding:6px;">Farmer / FO Name</th><th style="padding:6px;">RSBSA No.</th><th style="padding:6px;">Hectarage</th><th style="padding:6px;">Warehouse</th></tr></thead>
+    <table>
+      <thead><tr><th>Control No.</th><th>Farmer / FO Name</th><th>RSBSA No.</th><th>Hectarage</th><th>Warehouse</th></tr></thead>
       <tbody>${rowsHtml || `<tr><td colspan="5">No registered farmers.</td></tr>`}</tbody>
     </table>`;
 
@@ -144,8 +144,8 @@ async function renderDeliveryLogReport(host) {
     <tr><td>${new Date(d.date_timestamp).toLocaleString()}</td><td>${d.display_name}</td><td>${d.rsbsa_no}</td><td>${d.warehouse_name}</td><td>${d.variety}</td><td>${formatComma(d.num_bags)}</td><td>${formatWeightValue(d.net_kilos, unit)}</td></tr>
   `).join('');
   const printTableHtml = `
-    <table style="width:100%;border-collapse:collapse;font-size:10.5px;">
-      <thead><tr style="background:#003366;color:#fff;"><th style="padding:6px;">Timestamp</th><th style="padding:6px;">Farmer / FO</th><th style="padding:6px;">RSBSA</th><th style="padding:6px;">Warehouse</th><th style="padding:6px;">Variety</th><th style="padding:6px;">Net Bags</th><th style="padding:6px;">${weightUnitLabel(unit)}</th></tr></thead>
+    <table>
+      <thead><tr><th>Timestamp</th><th>Farmer / FO</th><th>RSBSA</th><th>Warehouse</th><th>Variety</th><th>Net Bags</th><th>${weightUnitLabel(unit)}</th></tr></thead>
       <tbody>${rowsHtml || `<tr><td colspan="7">No deliveries recorded.</td></tr>`}</tbody>
     </table>`;
 
@@ -229,12 +229,12 @@ async function renderWarehouseSummaryReport(host) {
     <td>${formatComma(r.seasonBags)}</td><td>${formatWeightValue(r.seasonKilos, unit)}</td>
   </tr>`).join('');
   const printTableHtml = `
-    <table style="width:100%;border-collapse:collapse;font-size:10px;">
-      <thead><tr style="background:#003366;color:#fff;">
-        <th style="padding:5px;">Warehouse</th>
-        <th style="padding:5px;">Today (Net Bags)</th><th style="padding:5px;">Today (${weightUnitLabel(unit)})</th>
-        <th style="padding:5px;">Month (Net Bags)</th><th style="padding:5px;">Month (${weightUnitLabel(unit)})</th>
-        <th style="padding:5px;">Season (Net Bags)</th><th style="padding:5px;">Season (${weightUnitLabel(unit)})</th>
+    <table>
+      <thead><tr>
+        <th>Warehouse</th>
+        <th>Today (Net Bags)</th><th>Today (${weightUnitLabel(unit)})</th>
+        <th>Month (Net Bags)</th><th>Month (${weightUnitLabel(unit)})</th>
+        <th>Season (Net Bags)</th><th>Season (${weightUnitLabel(unit)})</th>
       </tr></thead>
       <tbody>${rowsHtml || `<tr><td colspan="7">No warehouses configured.</td></tr>`}</tbody>
     </table>`;

@@ -21,7 +21,7 @@ SCREEN_RENDERERS.passbooks = async function (container, params) {
     <button class="fab" id="pb-fab" title="Register New Passbook">${icon('plus', 26)}</button>
   `;
 
-  document.getElementById('pb-fab').onclick = () => navigate('passbookForm', {});
+  document.getElementById('pb-fab').onclick = () => navigate('passbookWizard', {});
 
   document.getElementById('pb-subtabs').addEventListener('click', (e) => {
     const btn = e.target.closest('button');

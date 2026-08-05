@@ -186,21 +186,11 @@ async function renderCelestialBackground() {
   positionCelestialBody(bodyEl, isDark);
 
   if (season === 'MAIN') {
-    // Main Cropping Season: overcast clouds + rain + occasional lightning flash
-    const cloudLayout = [
-      { left: '4%', top: '14px', w: 64, h: 22 },
-      { left: '38%', top: '8px', w: 84, h: 26 },
-      { left: '70%', top: '18px', w: 58, h: 20 }
-    ];
-    cloudLayout.forEach(c => {
-      const cloud = document.createElement('div');
-      cloud.className = 'sky-cloud';
-      cloud.style.cssText = `left:${c.left}; top:${c.top}; width:${c.w}px; height:${c.h}px;`;
-      banner.appendChild(cloud);
-    });
+    // Main Cropping Season: dense overcast clouds + rain + occasional lightning
+    spawnClouds(banner, 4 + Math.floor(Math.random() * 2), { minOpacity: 0.45, maxOpacity: 0.85, sizeMin: 55, sizeMax: 110 });
 
     const rainHost = document.createElement('div');
-    rainHost.style.cssText = 'position:absolute;inset:0;overflow:hidden;';
+    rainHost.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;';
     for (let i = 0; i < 26; i++) {
       const drop = document.createElement('div');
       drop.className = 'raindrop';
@@ -215,7 +205,31 @@ async function renderCelestialBackground() {
     flash.className = 'lightning-flash';
     flash.style.animationDelay = Math.random() * 4 + 's';
     banner.appendChild(flash);
+  } else {
+    // Summer Cropping Season: a couple of light, sparse clouds — mostly clear/sunny
+    spawnClouds(banner, 1 + Math.floor(Math.random() * 2), { minOpacity: 0.18, maxOpacity: 0.38, sizeMin: 35, sizeMax: 65 });
   }
+}
+
+/** Spawns a set of clouds with randomized size, vertical position, opacity,
+ *  and drift speed so they read as real flying clouds rather than identical
+ *  static shapes — each one continuously drifts across and loops. */
+function spawnClouds(banner, count, { minOpacity = 0.3, maxOpacity = 0.7, sizeMin = 40, sizeMax = 95 } = {}) {
+  const host = document.createElement('div');
+  host.style.cssText = 'position:absolute; inset:0; overflow:hidden; pointer-events:none;';
+  for (let i = 0; i < count; i++) {
+    const cloud = document.createElement('div');
+    cloud.className = 'sky-cloud';
+    const w = sizeMin + Math.random() * (sizeMax - sizeMin);
+    const h = w * (0.26 + Math.random() * 0.16);
+    const top = 4 + Math.random() * 48;
+    const duration = 20 + Math.random() * 30; // 20–50s — each cloud has its own speed
+    const delay = -Math.random() * duration;   // stagger starting positions along the path
+    const opacity = minOpacity + Math.random() * (maxOpacity - minOpacity);
+    cloud.style.cssText = `top:${top}px; width:${w}px; height:${h}px; opacity:${opacity.toFixed(2)}; animation-duration:${duration}s; animation-delay:${delay}s;`;
+    host.appendChild(cloud);
+  }
+  banner.appendChild(host);
 }
 
 /** Keeps the sun/moon drifting along its arc in real time while the app is open. */

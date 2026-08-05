@@ -103,16 +103,19 @@ async function pushLocalChanges(url, logFn) {
     }
 
     // Staleness check: if the pull that just ran (runSync pulls before pushing)
-    // already changed this exact record, the server's version wins — drop our
-    // queued snapshot instead of re-clobbering the data we just accepted. This
-    // is what protects a brand-new device's freshly-seeded local defaults from
-    // overwriting real data another device already published to the backend,
-    // even if the new device's system clock happens to read later.
+    // already changed — or deleted — this exact record, the server's version
+    // wins and we drop our queued snapshot instead of re-clobbering the data
+    // we just accepted. This protects a brand-new device's freshly-seeded
+    // local defaults from overwriting real data another device already
+    // published, and — just as importantly — stops a device that never knew
+    // about a deletion from reviving a record another device deleted: if the
+    // pull's hard-delete already removed it locally, `currentLocal` will be
+    // undefined here, which is exactly the case to drop rather than push.
     const pkField = PRIMARY_KEY_FIELDS[item.table_name];
     if (pkField && db[item.table_name]) {
       const pkValue = parsed[pkField];
       const currentLocal = await db[item.table_name].get(pkValue);
-      if (currentLocal && currentLocal.last_updated !== parsed.last_updated) {
+      if (!currentLocal || currentLocal.last_updated !== parsed.last_updated) {
         idsToDelete.push(item.id);
         continue;
       }

@@ -23,7 +23,6 @@ function renderLoginScreen() {
         <button class="pin-key gold" data-key="back">⌫</button>
       </div>
       <div id="pin-error" style="color:#FFB4B4; font-size:12.5px; margin-top:18px; min-height:16px; font-weight:600;"></div>
-      <p style="color:rgba(255,255,255,0.5); font-size:11px; margin-top:22px;">Default Administrator PIN: 123456</p>
     </div>
   `;
 

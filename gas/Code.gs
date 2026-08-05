@@ -175,6 +175,26 @@ function authenticateUser(pinHash) {
 /**
  * Returns Delta Data updated after the specified ISO timestamp
  */
+/** Google Sheets auto-detects date-looking cell values and silently converts
+ *  them to its own Date type. When read back via getValues() and serialized
+ *  to JSON, a Date becomes a full ISO timestamp (e.g. "1985-07-15T00:00:00.000Z")
+ *  instead of the plain "YYYY-MM-DD" string the app originally wrote — this
+ *  is what was causing "Invalid Date" to appear on printed IDs. Normalize
+ *  every cell here so the client always receives a predictable format.
+ */
+function normalizeCellValue(value, header) {
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    if (header === 'birth_date') {
+      const y = value.getFullYear();
+      const m = String(value.getMonth() + 1).padStart(2, '0');
+      const d = String(value.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    return value.toISOString();
+  }
+  return value;
+}
+
 function getInitialData(sinceTimestamp) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const responseData = {};
@@ -198,7 +218,7 @@ function getInitialData(sinceTimestamp) {
     }).map(row => {
       const rowObj = {};
       headers.forEach((header, colIdx) => {
-        rowObj[header] = row[colIdx];
+        rowObj[header] = normalizeCellValue(row[colIdx], header);
       });
       return rowObj;
     });
