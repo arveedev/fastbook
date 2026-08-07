@@ -7,6 +7,7 @@ SCREEN_RENDERERS.passbooks = async function (container, params) {
 
   container.innerHTML = `
     <div class="content">
+      <button class="btn btn-primary btn-block mb-14" id="pb-register-btn">${icon('plus', 18)} Register New Passbook</button>
       <div class="search-bar">
         ${icon('search', 18)}
         <input type="text" id="pb-search" placeholder="Search name, RSBSA no., or serial..." value="${searchQ}">
@@ -18,10 +19,9 @@ SCREEN_RENDERERS.passbooks = async function (container, params) {
       </div>
       <div id="pb-list-host"></div>
     </div>
-    <button class="fab" id="pb-fab" title="Register New Passbook">${icon('plus', 26)}</button>
   `;
 
-  document.getElementById('pb-fab').onclick = () => navigate('passbookWizard', {});
+  document.getElementById('pb-register-btn').onclick = () => navigate('passbookWizard', {});
 
   document.getElementById('pb-subtabs').addEventListener('click', (e) => {
     const btn = e.target.closest('button');

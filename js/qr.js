@@ -73,7 +73,7 @@ async function printPassbookId(farmer) {
     </div>
   `;
 
-  renderQrInto(document.getElementById('id-qr-host'), buildQrPayload(farmer), 150);
+  renderQrInto(document.getElementById('id-qr-host'), buildQrPayload(farmer), 100);
 
   await waitForImages(printArea);
   setTimeout(() => window.print(), 150);

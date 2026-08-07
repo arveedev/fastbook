@@ -77,18 +77,7 @@ async function renderScanResultBody(container, farmer) {
         </div>` : ''}
         <div id="sr-history-list">
           ${history.length === 0 ? `<div class="empty-state">${icon('empty', 40)}<p>No delivery records yet for this passbook.</p></div>` :
-            history.slice(0, 15).map(d => `
-            <div class="flex-between" style="padding:10px 0; border-bottom:1px solid var(--border);">
-              <div>
-                <div class="text-sm" style="font-weight:700;">${new Date(d.date_timestamp).toLocaleDateString()} <span class="text-muted" style="font-weight:500;">${new Date(d.date_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>
-                <div class="text-muted" style="font-size:11px;">${d.warehouse_name} · ${d.variety}</div>
-              </div>
-              <div style="text-align:right;">
-                <span class="badge badge-gold">${formatComma(d.num_bags)} Net Bags</span>
-                <div class="text-muted" style="font-size:10.5px; margin-top:3px;">${formatWeightValue(d.net_kilos, unit)} ${weightUnitLabel(unit)}</div>
-              </div>
-            </div>
-          `).join('')}
+            history.slice(0, 15).map(d => renderDeliveryHistoryRow(d, unit)).join('')}
           ${history.length > 15 ? `<p class="text-muted text-sm mt-8">+ ${history.length - 15} more record(s). View full details for the complete history.</p>` : ''}
         </div>
       </div>
@@ -112,6 +101,10 @@ async function renderScanResultBody(container, farmer) {
     });
   };
   bindWeightUnitToggle('sr-unit-toggle', async () => {
+    const fresh = await db.farmers.get(farmer.passbook_id);
+    await renderScanResultBody(container, fresh);
+  });
+  bindDeliveryHistoryActions(document.getElementById('sr-history-list'), farmer, async () => {
     const fresh = await db.farmers.get(farmer.passbook_id);
     await renderScanResultBody(container, fresh);
   });

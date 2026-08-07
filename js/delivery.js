@@ -33,7 +33,7 @@ async function openRecordDeliveryModal(farmer, onSaved) {
     <form id="delivery-form" class="mt-14">
       <div class="field"><label>Target Warehouse <span class="req">*</span></label>
         <select id="dl-warehouse" class="input-guided" required>
-          ${warehouses.map(w => `<option value="${w.warehouse_name}" ${w.warehouse_name === farmer.warehouse_assigned ? 'selected' : ''}>${w.warehouse_name}</option>`).join('')}
+          ${warehouses.map(w => `<option value="${w.warehouse_name}">${w.warehouse_name}</option>`).join('')}
         </select>
       </div>
       <div class="field"><label>Palay Variety <span class="req">*</span></label>
@@ -150,6 +150,113 @@ async function openRecordDeliveryModal(farmer, onSaved) {
   });
 
   recompute();
+}
+
+/** Renders one delivery history row with Edit/Delete actions. */
+function renderDeliveryHistoryRow(d, unit) {
+  return `
+    <div class="flex-between delivery-history-row" data-delivery-id="${d.delivery_id}" style="padding:10px 0; border-bottom:1px solid var(--border);">
+      <div style="min-width:0; flex:1;">
+        <div class="text-sm" style="font-weight:700;">${new Date(d.date_timestamp).toLocaleDateString()} <span class="text-muted" style="font-weight:500;">${new Date(d.date_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>
+        <div class="text-muted" style="font-size:11px;">${d.warehouse_name} · ${d.variety}</div>
+      </div>
+      <div style="text-align:right; margin-right:8px;">
+        <span class="badge badge-gold">${formatComma(d.num_bags)} Net Bags</span>
+        <div class="text-muted" style="font-size:10.5px; margin-top:3px;">${formatWeightValue(d.net_kilos, unit)} ${weightUnitLabel(unit)}</div>
+      </div>
+      <div style="display:flex; gap:6px; flex-shrink:0;">
+        <button class="icon-btn delivery-edit-btn" style="background:var(--surface-2); color:var(--text); width:34px; height:34px;" title="Edit delivery">${icon('edit', 15)}</button>
+        <button class="icon-btn delivery-delete-btn" style="background:rgba(198,40,40,0.12); color:var(--danger); width:34px; height:34px;" title="Delete delivery">✕</button>
+      </div>
+    </div>`;
+}
+
+/** Wires up Edit/Delete buttons within a container of delivery-history rows. */
+function bindDeliveryHistoryActions(container, farmer, onChange) {
+  container.querySelectorAll('.delivery-history-row').forEach(row => {
+    const deliveryId = row.dataset.deliveryId;
+    const editBtn = row.querySelector('.delivery-edit-btn');
+    const deleteBtn = row.querySelector('.delivery-delete-btn');
+    if (editBtn) {
+      editBtn.onclick = async () => {
+        const delivery = await db.deliveries.get(deliveryId);
+        if (delivery) openEditDeliveryModal(delivery, farmer, onChange);
+      };
+    }
+    if (deleteBtn) {
+      deleteBtn.onclick = async () => {
+        const ok = await confirmDialog('Delete this delivery record? This will restore the bags to the farmer\'s remaining seasonal balance.', 'Delete Delivery');
+        if (!ok) return;
+        const delivery = await db.deliveries.get(deliveryId);
+        if (!delivery) return;
+        delivery.is_deleted = true;
+        delivery.last_updated = new Date().toISOString();
+        await db.deliveries.put(delivery);
+        await queueSync('deliveries', 'upsert', delivery);
+        showToast('Delivery record deleted.', 'success');
+        if (onChange) onChange();
+      };
+    }
+  });
+}
+
+/** Modal to edit an existing delivery's warehouse, variety, bags, and kilos. */
+async function openEditDeliveryModal(delivery, farmer, onSaved) {
+  const settings = await getAllSettings();
+  const bagWeight = Number(settings.BAG_WEIGHT_KG || 50);
+  const warehouses = await db.warehouses.filter(w => !w.is_deleted && w.status === 'Active').toArray();
+  warehouses.sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name));
+
+  const backdrop = openModal(`
+    <div class="modal-header">
+      <h3>Edit Delivery</h3>
+      <button class="modal-close" id="ed-close">✕</button>
+    </div>
+    <div class="text-sm text-muted mb-14">${new Date(delivery.date_timestamp).toLocaleString()}</div>
+    <form id="edit-delivery-form">
+      <div class="field"><label>Target Warehouse <span class="req">*</span></label>
+        <select id="ed-warehouse" class="input-guided" required>
+          ${warehouses.map(w => `<option value="${w.warehouse_name}" ${w.warehouse_name === delivery.warehouse_name ? 'selected' : ''}>${w.warehouse_name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Palay Variety <span class="req">*</span></label>
+        <select id="ed-variety" class="input-guided" required>
+          ${PALAY_VARIETIES.map(v => `<option value="${v}" ${v === delivery.variety ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="two-col">
+        <div class="field"><label>Number of Bags <span class="req">*</span></label><input type="text" inputmode="numeric" id="ed-bags" class="input-guided" required value="${formatComma(delivery.num_bags)}"></div>
+        <div class="field"><label>Net Kilograms <span class="req">*</span></label><input type="text" inputmode="decimal" id="ed-kilos" class="input-guided" value="${formatComma(delivery.net_kilos)}"></div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block mt-14">Save Changes</button>
+    </form>
+  `, { center: true });
+
+  document.getElementById('ed-close').onclick = () => closeModal(backdrop);
+  attachLiveCommaFormatter(document.getElementById('ed-bags'));
+  attachLiveCommaFormatter(document.getElementById('ed-kilos'));
+
+  document.getElementById('edit-delivery-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const bags = unformatNumber(document.getElementById('ed-bags').value);
+    const kilos = unformatNumber(document.getElementById('ed-kilos').value) || bags * bagWeight;
+    const netBags = kilos > 0 ? kilos / bagWeight : bags;
+
+    if (bags <= 0) { showToast('Please enter the number of bags.', 'error'); return; }
+
+    delivery.warehouse_name = document.getElementById('ed-warehouse').value;
+    delivery.variety = document.getElementById('ed-variety').value;
+    delivery.num_bags = bags;
+    delivery.net_kilos = kilos;
+    delivery.net_bags_equivalent = Math.round(netBags * 100) / 100;
+    delivery.last_updated = new Date().toISOString();
+
+    await db.deliveries.put(delivery);
+    await queueSync('deliveries', 'upsert', delivery);
+    showToast('Delivery updated.', 'success');
+    closeModal(backdrop);
+    if (onSaved) onSaved();
+  });
 }
 
 function playConfirmationTone() {

@@ -71,18 +71,18 @@ async function renderRosterReport(host) {
     if (key === 'name') return buildDisplayName(f).toLowerCase();
     if (key === 'rsbsa') return f.rsbsa_no || '';
     if (key === 'hectarage') return Number(f.hectarage || 0);
-    if (key === 'warehouse') return f.warehouse_assigned || '';
+    if (key === 'contact') return f.contact_no || '';
     return '';
   };
   const s = ReportSortState.roster;
   farmers = genericSort(farmers, s.key, s.dir, accessor);
 
   const rowsHtml = farmers.map(f => `
-    <tr><td>${f.passbook_id}</td><td>${buildDisplayName(f)}</td><td>${f.rsbsa_no}</td><td>${formatComma(f.hectarage)}</td><td>${f.warehouse_assigned}</td></tr>
+    <tr><td>${f.passbook_id}</td><td>${buildDisplayName(f)}</td><td>${f.rsbsa_no}</td><td>${formatComma(f.hectarage)}</td><td>${f.contact_no || '—'}</td></tr>
   `).join('');
   const printTableHtml = `
     <table>
-      <thead><tr><th>Control No.</th><th>Farmer / FO Name</th><th>RSBSA No.</th><th>Hectarage</th><th>Warehouse</th></tr></thead>
+      <thead><tr><th>Control No.</th><th>Farmer / FO Name</th><th>RSBSA No.</th><th>Hectarage</th><th>Contact No.</th></tr></thead>
       <tbody>${rowsHtml || `<tr><td colspan="5">No registered farmers.</td></tr>`}</tbody>
     </table>`;
 
@@ -98,7 +98,7 @@ async function renderRosterReport(host) {
             <th class="sortable-th" data-k="name">Name${sortArrow('roster', 'name')}</th>
             <th class="sortable-th" data-k="rsbsa">RSBSA${sortArrow('roster', 'rsbsa')}</th>
             <th class="sortable-th" data-k="hectarage">Hectarage${sortArrow('roster', 'hectarage')}</th>
-            <th class="sortable-th" data-k="warehouse">Warehouse${sortArrow('roster', 'warehouse')}</th>
+            <th class="sortable-th" data-k="contact">Contact No.${sortArrow('roster', 'contact')}</th>
           </tr></thead>
           <tbody>${rowsHtml || `<tr><td colspan="5" class="text-muted">No registered farmers.</td></tr>`}</tbody>
         </table>

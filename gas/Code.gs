@@ -76,6 +76,25 @@ function jsonResponse(data) {
  * Creates missing sheets, adds missing column headers without removing data,
  * and sets default admin user and settings if missing.
  */
+// Columns that are genuinely numeric or date-typed — every other column gets
+// forced to plain text so Google Sheets never silently reinterprets things
+// like RSBSA numbers, phone numbers, or serial IDs as dates or numbers.
+const NUMERIC_OR_DATE_COLUMNS = new Set([
+  'hectarage', 'capacity_bags', 'num_bags', 'net_kilos', 'net_bags_equivalent',
+  'custom_quota_bags', 'year', 'birth_date'
+]);
+
+/** Forces every non-numeric/non-date column to plain-text format so Sheets
+ *  never auto-converts values like "05-12-34-000123" into a date. Applied to
+ *  a generous row range so it also protects rows added after this runs. */
+function enforceTextColumnFormats(sheet, headers) {
+  const maxRows = Math.max(sheet.getMaxRows(), 5000);
+  headers.forEach((header, idx) => {
+    if (NUMERIC_OR_DATE_COLUMNS.has(header)) return;
+    sheet.getRange(2, idx + 1, maxRows - 1, 1).setNumberFormat('@');
+  });
+}
+
 function initializeOrRepairDB() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const log = [];
@@ -106,6 +125,9 @@ function initializeOrRepairDB() {
         }
       });
     }
+
+    enforceTextColumnFormats(sheet, DB_SCHEMA[sheetName]);
+    log.push(`Enforced plain-text formatting on '${sheetName}' to prevent auto-conversion of RSBSA/ID/phone values`);
   });
 
   // Seed Default Admin Account if Users tab is empty (Default PIN: 123456 -> SHA256 Hash)

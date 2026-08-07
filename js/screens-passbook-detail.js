@@ -15,10 +15,17 @@ SCREEN_RENDERERS.passbookDetail = async function (container, params) {
 };
 
 async function renderPassbookDetailBody(container, farmer) {
+  const unit = getWeightUnit();
   const allowance = await computeSeasonalAllowance(farmer);
   const name = buildDisplayName(farmer);
   const pct = allowance.totalQuotaBags > 0 ? Math.min(100, (allowance.deliveredBagsCount / allowance.totalQuotaBags) * 100) : 0;
   const landholding = farmer.landholding_data ? JSON.parse(farmer.landholding_data) : [];
+
+  const history = (await db.deliveries
+    .where('passbook_id').equals(farmer.passbook_id)
+    .filter(d => !d.is_deleted)
+    .toArray())
+    .sort((a, b) => new Date(b.date_timestamp) - new Date(a.date_timestamp));
 
   container.innerHTML = `
     <div class="content">
@@ -29,10 +36,10 @@ async function renderPassbookDetailBody(container, farmer) {
       </div>
 
       <div class="card stagger">
-        <h2 style="font-size:18px;font-weight:800;">${name}</h2>
-        <p class="text-muted text-sm mt-8">${farmer.passbook_id} · RSBSA ${farmer.rsbsa_no}</p>
+        <h2 style="font-size:20px;font-weight:800;">${name}</h2>
+        <p class="text-muted" style="font-size:13.5px; margin-top:6px;">${farmer.passbook_id} · RSBSA ${farmer.rsbsa_no}</p>
         <div class="divider"></div>
-        <div class="two-col text-sm">
+        <div class="two-col" style="font-size:14px;">
           <div><b>Civil Status:</b><br>${farmer.civil_status || '—'}</div>
           <div><b>Gender:</b><br>${farmer.gender || '—'}</div>
           <div><b>Contact:</b><br>${farmer.contact_no || '—'}</div>
@@ -41,10 +48,9 @@ async function renderPassbookDetailBody(container, farmer) {
           <div><b>Irrigated:</b><br>${farmer.irrigated || '—'}</div>
         </div>
         <div class="divider"></div>
-        <div class="text-sm"><b>Home Address:</b><br>${farmer.home_barangay}, ${farmer.home_municipality}, ${farmer.home_province}</div>
-        <div class="text-sm mt-8"><b>Farm Address:</b><br>${farmer.farm_barangay}, ${farmer.farm_municipality}, ${farmer.farm_province}</div>
-        <div class="text-sm mt-8"><b>Assigned Warehouse:</b><br>${farmer.warehouse_assigned || '—'}</div>
-        <div class="text-sm mt-8"><b>Landholding Data:</b><br>${landholding.join(', ') || '—'}</div>
+        <div style="font-size:14px;"><b>Home Address:</b><br>${farmer.home_barangay}, ${farmer.home_municipality}, ${farmer.home_province}</div>
+        <div style="font-size:14px; margin-top:10px;"><b>Farm Address:</b><br>${farmer.farm_barangay}, ${farmer.farm_municipality}, ${farmer.farm_province}</div>
+        <div style="font-size:14px; margin-top:10px;"><b>Landholding Data:</b><br>${landholding.join(', ') || '—'}</div>
       </div>
 
       <div class="card">
@@ -60,10 +66,21 @@ async function renderPassbookDetailBody(container, farmer) {
         </div>
       </div>
 
-      <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:24px;">
+      <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
         <button class="btn btn-green btn-block" id="pd-record-delivery">Record New Delivery</button>
         <button class="btn btn-outline btn-block" id="pd-edit">${icon('edit', 16)} Edit Passbook Details</button>
         <button class="btn btn-gold btn-block" id="pd-print">${icon('print', 16)} Print Passbook ID</button>
+      </div>
+
+      <div class="card" style="margin-bottom:24px;">
+        <div class="flex-between mb-14">
+          <div class="card-title" style="margin:0;">📋 Delivery History</div>
+          ${renderWeightUnitToggle('pd-unit-toggle')}
+        </div>
+        <div id="pd-history-list">
+          ${history.length === 0 ? `<div class="empty-state">${icon('empty', 40)}<p>No delivery records yet.</p></div>` :
+            history.map(d => renderDeliveryHistoryRow(d, unit)).join('')}
+        </div>
       </div>
     </div>
   `;
@@ -77,4 +94,11 @@ async function renderPassbookDetailBody(container, farmer) {
       await renderPassbookDetailBody(container, fresh);
     });
   };
+
+  const refreshDetail = async () => {
+    const fresh = await db.farmers.get(farmer.passbook_id);
+    await renderPassbookDetailBody(container, fresh);
+  };
+  bindDeliveryHistoryActions(document.getElementById('pd-history-list'), farmer, refreshDetail);
+  bindWeightUnitToggle('pd-unit-toggle', refreshDetail);
 }

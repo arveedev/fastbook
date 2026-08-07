@@ -39,6 +39,14 @@ async function initializeLocalDB() {
     await db.users.put(u);
   }
 
+  // Migration: auto-fill the deployed backend URL for devices that already
+  // exist but never had one configured, so they don't need manual setup.
+  const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxjpUDZUsnH7O3Qy3iqvLtaN43JGHJiqlqUMdYN4Wx9WiWGy9IwKwiXc7Ou9V2XTGfg0w/exec';
+  const existingUrlRow = await db.systemSettings.get('GAS_WEBAPP_URL');
+  if (existingUrlRow && !existingUrlRow.setting_value) {
+    await db.systemSettings.put({ setting_key: 'GAS_WEBAPP_URL', setting_value: DEFAULT_GAS_URL, last_updated: nowIso });
+  }
+
   // Seed default Administrator account (PIN: 123456) if Users table empty
   const userCount = await db.users.count();
   if (userCount === 0) {
@@ -68,7 +76,7 @@ async function initializeLocalDB() {
       ['SEASON_OVERRIDE', 'AUTO'],
       ['BAG_WEIGHT_KG', '50'],
       ['THEME_MODE', 'light'],
-      ['GAS_WEBAPP_URL', ''],
+      ['GAS_WEBAPP_URL', 'https://script.google.com/macros/s/AKfycbxjpUDZUsnH7O3Qy3iqvLtaN43JGHJiqlqUMdYN4Wx9WiWGy9IwKwiXc7Ou9V2XTGfg0w/exec'],
       ['LAST_SYNC_TIMESTAMP', '']
     ];
     for (const [key, value] of defaults) {
@@ -131,22 +139,46 @@ async function getAllSettings() {
  *  Format: NFA{REGION}-{BRANCH}{YY}-{TYPE}-{SEQUENCE(4-digit)}
  * ---------------------------------------------------------------------- */
 async function generateSerialNumber(passbookType) {
+  // Pull the latest synced data first — this narrows the window in which two
+  // devices could independently generate the same ID. (Best-effort: if
+  // offline, we fall back to the local counter below.)
+  if (typeof isOnline === 'function' && isOnline() && typeof runSync === 'function') {
+    try { await runSync(); } catch (e) { /* offline or backend unavailable — proceed with local data */ }
+  }
+
   const settings = await getAllSettings();
   const region = settings.REGION_CODE || 'V';
   const branch = settings.BRANCH_CODE || 'ALB';
   const yy = String(new Date().getFullYear()).slice(-2);
   const typeCode = passbookType === 'Master' ? 'MB' : 'FB';
+  const prefix = `NFA${region}-${branch}${yy}-${typeCode}-`;
   const seqKey = `${typeCode}-${yy}`;
 
-  const nextSeq = await db.transaction('rw', db.sequences, async () => {
-    let seqRow = await db.sequences.get(seqKey);
-    const nextVal = seqRow ? seqRow.seq_value + 1 : 1;
+  const nextSeq = await db.transaction('rw', db.sequences, db.farmers, async () => {
+    // Critical fix: don't just increment a local-only counter (which has no
+    // idea what other devices have already registered). Instead, scan every
+    // locally-known farmer (which, after the sync above, includes everyone
+    // else's registrations too) for the highest sequence number actually in
+    // use for this prefix, and never issue a number at or below that.
+    const allFarmers = await db.farmers.toArray();
+    let maxUsedSeq = 0;
+    allFarmers.forEach(f => {
+      if (f.passbook_id && f.passbook_id.startsWith(prefix)) {
+        const num = parseInt(f.passbook_id.slice(prefix.length), 10);
+        if (!isNaN(num) && num > maxUsedSeq) maxUsedSeq = num;
+      }
+    });
+
+    const seqRow = await db.sequences.get(seqKey);
+    const localCounterSeq = seqRow ? seqRow.seq_value : 0;
+
+    const nextVal = Math.max(maxUsedSeq, localCounterSeq) + 1;
     await db.sequences.put({ seq_key: seqKey, seq_value: nextVal });
     return nextVal;
   });
 
   const paddedSeq = String(nextSeq).padStart(4, '0');
-  return `NFA${region}-${branch}${yy}-${typeCode}-${paddedSeq}`;
+  return `${prefix}${paddedSeq}`;
 }
 
 /* ---------------------------------------------------------------------- *

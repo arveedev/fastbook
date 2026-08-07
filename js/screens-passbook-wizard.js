@@ -17,7 +17,7 @@ SCREEN_RENDERERS.passbookWizard = async function (container) {
       farm_province: '', farm_municipality: '', farm_barangay: '',
       hectarage: '', birth_date: '', civil_status: '', spouse_name: '', contact_no: '',
       gender: '', sector: '', irrigated: 'No', landholding_data: [], rsbsa_no: '',
-      warehouse_assigned: '', custom_quota_bags: ''
+      custom_quota_bags: ''
     }
   };
   await renderWizardStep(container, state);
@@ -45,7 +45,7 @@ async function renderWizardStep(container, state) {
 function renderWizardStepPersonal(container, state) {
   const d = state.data;
   container.innerHTML = `
-    <div class="content">
+    <div class="content wizard-step-slide">
       ${wizardProgressHtml(0)}
       <div class="card">
         <div class="card-title">Passbook Type</div>
@@ -174,7 +174,7 @@ async function renderWizardStepAddress(container, state) {
   const provinces = getProvinces(regionCode);
 
   container.innerHTML = `
-    <div class="content">
+    <div class="content wizard-step-slide">
       ${wizardProgressHtml(1)}
       <div class="card">
         <div class="card-title">Home Address</div>
@@ -288,11 +288,9 @@ async function renderWizardStepAddress(container, state) {
 /* ---------------- STEP 3: LAND & DELIVERY DATA ---------------- */
 async function renderWizardStepLandDelivery(container, state) {
   const d = state.data;
-  const warehouses = (await db.warehouses.filter(w => !w.is_deleted && w.status === 'Active').toArray())
-    .sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name));
 
   container.innerHTML = `
-    <div class="content">
+    <div class="content wizard-step-slide">
       ${wizardProgressHtml(2)}
       <div class="card">
         <div class="card-title">Land & Delivery Data</div>
@@ -316,12 +314,6 @@ async function renderWizardStepLandDelivery(container, state) {
         <div class="field"><label>RSBSA Number <span class="req">*</span></label>
           <input type="text" id="f-rsbsa_no" required placeholder="00-00-00-000000" value="${d.rsbsa_no}">
         </div>
-        <div class="field"><label>Assigned Warehouse <span class="req">*</span></label>
-          <select id="f-warehouse_assigned" required>
-            <option value="">Select Warehouse...</option>
-            ${warehouses.map(w => `<option value="${w.warehouse_name}" ${d.warehouse_assigned === w.warehouse_name ? 'selected' : ''}>${w.warehouse_name}</option>`).join('')}
-          </select>
-        </div>
         ${AppState.currentUser.role === 'Admin' ? `
         <div class="field"><label>Per Season Delivery Custom Quota (Admin Override)</label>
           <input type="text" inputmode="decimal" id="f-custom_quota_bags" value="${d.custom_quota_bags ? formatComma(d.custom_quota_bags) : ''}" placeholder="Leave blank to use hectarage formula">
@@ -343,17 +335,15 @@ async function renderWizardStepLandDelivery(container, state) {
     const irrigated = getSegmentedValue('irrigated-toggle') || 'No';
     const landholding = Array.from(document.querySelectorAll('#landholding-list input:checked')).map(c => c.value);
     const rsbsaNo = document.getElementById('f-rsbsa_no').value.trim();
-    const warehouseAssigned = document.getElementById('f-warehouse_assigned').value;
     const customQuota = customQuotaEl ? unformatNumber(customQuotaEl.value) : (d.custom_quota_bags || 0);
 
     if (!hectarage || hectarage <= 0) { showToast('Please enter a valid hectarage.', 'error'); return; }
     if (landholding.length === 0) { showToast('Please select at least one Landholding Data option.', 'error'); return; }
     if (!rsbsaNo) { showToast('RSBSA Number is required.', 'error'); return; }
-    if (!warehouseAssigned) { showToast('Please select an Assigned Warehouse.', 'error'); return; }
 
     Object.assign(state.data, {
       hectarage, irrigated, landholding_data: landholding, rsbsa_no: rsbsaNo,
-      warehouse_assigned: warehouseAssigned, custom_quota_bags: customQuota
+      custom_quota_bags: customQuota
     });
 
     state.step = 3;
@@ -369,7 +359,7 @@ async function renderWizardStepReview(container, state) {
   const estQuota = d.custom_quota_bags > 0 ? d.custom_quota_bags : Math.floor(Number(d.hectarage || 0) * 100);
 
   container.innerHTML = `
-    <div class="content">
+    <div class="content wizard-step-slide">
       ${wizardProgressHtml(3)}
       <div class="card">
         <div class="card-title">Review Your Entry</div>
@@ -388,7 +378,6 @@ async function renderWizardStepReview(container, state) {
           <div><b>Hectarage:</b> ${formatComma(d.hectarage)} Ha (${d.irrigated === 'Yes' ? 'Irrigated' : 'Rainfed'})</div>
           <div><b>Landholding:</b> ${d.landholding_data.join(', ')}</div>
           <div><b>RSBSA:</b> ${d.rsbsa_no}</div>
-          <div><b>Warehouse:</b> ${d.warehouse_assigned}</div>
           <div><b>Estimated Per-Season Quota:</b> ${formatComma(estQuota)} Net Bags</div>
         </div>
       </div>
@@ -414,7 +403,7 @@ async function renderWizardStepReview(container, state) {
       hectarage: d.hectarage, birth_date: d.birth_date, civil_status: d.civil_status, spouse_name: d.spouse_name,
       contact_no: d.contact_no, gender: d.gender, sector: d.sector, irrigated: d.irrigated,
       landholding_data: JSON.stringify(d.landholding_data), rsbsa_no: d.rsbsa_no,
-      warehouse_assigned: d.warehouse_assigned, custom_quota_bags: d.custom_quota_bags || 0,
+      custom_quota_bags: d.custom_quota_bags || 0,
       created_at: nowIso, last_updated: nowIso, is_deleted: false
     };
 

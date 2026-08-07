@@ -14,7 +14,7 @@ SCREEN_RENDERERS.passbookForm = async function (container, params) {
     farm_province: '', farm_municipality: '', farm_barangay: '',
     hectarage: '', birth_date: '', civil_status: '', spouse_name: '', contact_no: '',
     gender: '', sector: '', irrigated: 'No', landholding_data: [], rsbsa_no: '',
-    warehouse_assigned: '', custom_quota_bags: '', same_as_home: false
+    custom_quota_bags: '', same_as_home: false
   };
   if (isEdit) {
     const existing = await db.farmers.get(editingId);
@@ -24,8 +24,6 @@ SCREEN_RENDERERS.passbookForm = async function (container, params) {
   const settings = await getAllSettings();
   const regionCode = settings.REGION_CODE || 'V';
   const provinces = getProvinces(regionCode);
-  const warehouses = await db.warehouses.filter(w => !w.is_deleted && w.status === 'Active').toArray();
-  warehouses.sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name));
 
   container.innerHTML = `
     <div class="content">
@@ -158,12 +156,6 @@ SCREEN_RENDERERS.passbookForm = async function (container, params) {
           </div>
           <div class="field"><label>RSBSA Number <span class="req">*</span></label>
             <input type="text" id="f-rsbsa_no" required placeholder="00-00-00-000000" value="${record.rsbsa_no || ''}">
-          </div>
-          <div class="field"><label>Assigned Warehouse <span class="req">*</span></label>
-            <select id="f-warehouse_assigned" required>
-              <option value="">Select Warehouse...</option>
-              ${warehouses.map(w => `<option value="${w.warehouse_name}" ${record.warehouse_assigned === w.warehouse_name ? 'selected' : ''}>${w.warehouse_name}</option>`).join('')}
-            </select>
           </div>
           ${AppState.currentUser.role === 'Admin' ? `
           <div class="field"><label>Per Season Delivery Custom Quota (Admin Override)</label>
@@ -347,7 +339,6 @@ async function submitPassbookForm(record, editingId, sameAsHome) {
     irrigated,
     landholding_data: JSON.stringify(landholding),
     rsbsa_no: document.getElementById('f-rsbsa_no').value.trim(),
-    warehouse_assigned: document.getElementById('f-warehouse_assigned').value,
     custom_quota_bags: customQuotaEl ? unformatNumber(customQuotaEl.value) : (record.custom_quota_bags || 0),
     created_at: editingId ? record.created_at || nowIso : nowIso,
     last_updated: nowIso,
