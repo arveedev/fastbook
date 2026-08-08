@@ -286,6 +286,11 @@ async function renderSyncSettings(host, isAdmin) {
         <span class="text-muted">Connection status</span>
         <span class="badge ${navigator.onLine ? 'badge-green' : 'badge-danger'}">${navigator.onLine ? 'Online' : 'Offline'}</span>
       </div>
+      ${s.LAST_SYNC_ERROR ? `
+      <div class="card" style="background:rgba(198,40,40,0.08); box-shadow:none; border-color:var(--danger); margin-top:12px; margin-bottom:0;">
+        <div class="text-sm" style="font-weight:700; color:var(--danger);">⚠ Last sync error${s.LAST_SYNC_ERROR_AT ? ' (' + new Date(s.LAST_SYNC_ERROR_AT).toLocaleString() + ')' : ''}</div>
+        <div class="text-sm mt-8">${s.LAST_SYNC_ERROR}</div>
+      </div>` : ''}
       <button class="btn btn-outline btn-block mt-14" id="run-sync-now">${icon('sync', 16)} Sync Now (force immediate sync)</button>
       <div id="sync-log" class="text-sm text-muted mt-8"></div>
     </div>

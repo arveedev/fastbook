@@ -26,11 +26,12 @@ const PRIMARY_KEY_FIELDS = {
 // Settings that are specific to THIS device/browser and must never be pushed
 // to, or overwritten from, the shared backend (e.g. each device connects to
 // the backend independently; theme is a personal display preference).
-const DEVICE_LOCAL_SETTING_KEYS = ['GAS_WEBAPP_URL', 'THEME_MODE', 'LAST_SYNC_TIMESTAMP'];
+const DEVICE_LOCAL_SETTING_KEYS = ['GAS_WEBAPP_URL', 'THEME_MODE', 'LAST_SYNC_TIMESTAMP', 'LAST_SYNC_ERROR', 'LAST_SYNC_ERROR_AT', 'REPAIR_RUN_FOR_URL'];
 
 let syncInProgress = false;
 let backgroundSyncTimer = null;
 let mutationSyncDebounce = null;
+let lastSyncErrorShown = false;
 
 function isOnline() {
   return navigator.onLine;
@@ -38,6 +39,24 @@ function isOnline() {
 
 async function getGasUrl() {
   return await getSetting('GAS_WEBAPP_URL', '');
+}
+
+/** Runs the backend's schema/format repair exactly once per backend URL
+ *  (tracked locally), automatically — not something that requires an Admin
+ *  to remember to click. This is what applies the plain-text column
+ *  formatting that stops Google Sheets from silently corrupting RSBSA
+ *  numbers, phone numbers, and IDs into dates/timestamps. Without this
+ *  having actually run, that corruption fix never takes effect. */
+async function ensureRemoteRepairRun(url) {
+  const flagKey = 'REPAIR_RUN_FOR_URL';
+  const alreadyRunFor = await getSetting(flagKey, '');
+  if (alreadyRunFor === url) return;
+  try {
+    await triggerRemoteRepair();
+    await setLocalSetting(flagKey, url);
+  } catch (e) {
+    // Will simply retry on the next sync cycle since the flag wasn't set.
+  }
 }
 
 /** Safely parses a fetch Response as JSON, producing a clear error instead of
@@ -69,11 +88,22 @@ async function runSync(logFn = () => {}) {
   syncInProgress = true;
   try {
     logFn('Connecting to backend...');
+    await ensureRemoteRepairRun(url);
     const pullResult = await pullRemoteChanges(url, logFn);
     const pushResult = await pushLocalChanges(url, logFn);
+    await setLocalSetting('LAST_SYNC_ERROR', '');
+    lastSyncErrorShown = false;
     return { status: 'success', pushed: pushResult, pulled: pullResult };
   } catch (err) {
     logFn('Sync error: ' + err.message);
+    await setLocalSetting('LAST_SYNC_ERROR', err.message);
+    await setLocalSetting('LAST_SYNC_ERROR_AT', new Date().toISOString());
+    // Surface a one-time toast for background failures so they're never
+    // completely silent — but don't spam on every retry.
+    if (!lastSyncErrorShown && typeof showToast === 'function') {
+      lastSyncErrorShown = true;
+      showToast('Background sync failed: ' + err.message, 'error', 5000);
+    }
     return { status: 'error', message: err.message };
   } finally {
     syncInProgress = false;

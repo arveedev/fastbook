@@ -43,7 +43,7 @@ async function initializeLocalDB() {
   // exist but never had one configured, so they don't need manual setup.
   const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxjpUDZUsnH7O3Qy3iqvLtaN43JGHJiqlqUMdYN4Wx9WiWGy9IwKwiXc7Ou9V2XTGfg0w/exec';
   const existingUrlRow = await db.systemSettings.get('GAS_WEBAPP_URL');
-  if (existingUrlRow && !existingUrlRow.setting_value) {
+  if (!existingUrlRow || !existingUrlRow.setting_value) {
     await db.systemSettings.put({ setting_key: 'GAS_WEBAPP_URL', setting_value: DEFAULT_GAS_URL, last_updated: nowIso });
   }
 
