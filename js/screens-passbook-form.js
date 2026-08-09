@@ -64,7 +64,7 @@ SCREEN_RENDERERS.passbookForm = async function (container, params) {
             <div class="hint">If populated, classifies this entry as linked to a Farmer Organization.</div>
           </div>
           <div class="two-col">
-            <div class="field"><label>Birth Date <span class="req">*</span></label><input type="date" id="f-birth_date" required value="${record.birth_date || ''}"></div>
+            <div class="field"><label>Birth Date <span class="req">*</span></label><input type="date" id="f-birth_date" required value="${toDateInputValue(record.birth_date)}"></div>
             <div class="field"><label>Gender <span class="req">*</span></label>
               <div class="segmented" id="gender-toggle">
                 <button type="button" data-v="Male" class="${record.gender === 'Male' ? 'active' : ''}">Male</button>

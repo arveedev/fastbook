@@ -335,6 +335,24 @@ function bindWeightUnitToggle(id, onChange) {
   });
 }
 
+/** Converts a date value into the exact "YYYY-MM-DD" format native
+ *  <input type="date"> elements require to auto-populate. Native date inputs
+ *  silently show blank for anything not in this exact format, so this
+ *  handles already-existing data that may still be a full ISO timestamp
+ *  (from before the Sheets auto-conversion fix took effect). */
+function toDateInputValue(value) {
+  if (!value) return '';
+  const str = String(value).trim();
+  if (!str) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str; // already correct
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 /** Safely formats a date-only value (like birth_date) for display, regardless
  *  of whether it arrived as a plain "YYYY-MM-DD" string or a full ISO
  *  timestamp (which can happen if Google Sheets auto-converted the cell to

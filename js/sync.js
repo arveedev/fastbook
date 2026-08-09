@@ -26,7 +26,7 @@ const PRIMARY_KEY_FIELDS = {
 // Settings that are specific to THIS device/browser and must never be pushed
 // to, or overwritten from, the shared backend (e.g. each device connects to
 // the backend independently; theme is a personal display preference).
-const DEVICE_LOCAL_SETTING_KEYS = ['GAS_WEBAPP_URL', 'THEME_MODE', 'LAST_SYNC_TIMESTAMP', 'LAST_SYNC_ERROR', 'LAST_SYNC_ERROR_AT', 'REPAIR_RUN_FOR_URL'];
+const DEVICE_LOCAL_SETTING_KEYS = ['GAS_WEBAPP_URL', 'THEME_MODE', 'LAST_SYNC_TIMESTAMP', 'LAST_SYNC_ERROR', 'LAST_SYNC_ERROR_AT', 'REPAIR_RUN_FOR_URL', 'REPAIR_RUN_VERSION'];
 
 let syncInProgress = false;
 let backgroundSyncTimer = null;
@@ -41,21 +41,31 @@ async function getGasUrl() {
   return await getSetting('GAS_WEBAPP_URL', '');
 }
 
-/** Runs the backend's schema/format repair exactly once per backend URL
- *  (tracked locally), automatically — not something that requires an Admin
- *  to remember to click. This is what applies the plain-text column
- *  formatting that stops Google Sheets from silently corrupting RSBSA
- *  numbers, phone numbers, and IDs into dates/timestamps. Without this
- *  having actually run, that corruption fix never takes effect. */
+// Bump this whenever the backend repair logic changes in a way that needs
+// to re-run on devices that already completed an earlier version of it
+// (e.g. this fix protects birth_date from Sheets' date auto-conversion,
+// which an earlier repair version didn't cover).
+const REPAIR_LOGIC_VERSION = '2';
+
+/** Runs the backend's schema/format repair whenever the repair logic itself
+ *  has changed since this device last ran it (tracked by version, not just
+ *  URL) — not something that requires an Admin to remember to click. This is
+ *  what applies the plain-text column formatting that stops Google Sheets
+ *  from silently corrupting RSBSA numbers, birth dates, phone numbers, and
+ *  IDs into dates/timestamps. Without this having actually run, that
+ *  corruption fix never takes effect. */
 async function ensureRemoteRepairRun(url) {
   const flagKey = 'REPAIR_RUN_FOR_URL';
+  const versionKey = 'REPAIR_RUN_VERSION';
   const alreadyRunFor = await getSetting(flagKey, '');
-  if (alreadyRunFor === url) return;
+  const alreadyRunVersion = await getSetting(versionKey, '');
+  if (alreadyRunFor === url && alreadyRunVersion === REPAIR_LOGIC_VERSION) return;
   try {
     await triggerRemoteRepair();
     await setLocalSetting(flagKey, url);
+    await setLocalSetting(versionKey, REPAIR_LOGIC_VERSION);
   } catch (e) {
-    // Will simply retry on the next sync cycle since the flag wasn't set.
+    // Will simply retry on the next sync cycle since the flags weren't set.
   }
 }
 

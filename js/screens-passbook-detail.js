@@ -70,6 +70,7 @@ async function renderPassbookDetailBody(container, farmer) {
         <button class="btn btn-green btn-block" id="pd-record-delivery">Record New Delivery</button>
         <button class="btn btn-outline btn-block" id="pd-edit">${icon('edit', 16)} Edit Passbook Details</button>
         <button class="btn btn-gold btn-block" id="pd-print">${icon('print', 16)} Print Passbook ID</button>
+        <button class="btn btn-danger btn-block" id="pd-delete">✕ Delete Passbook</button>
       </div>
 
       <div class="card" style="margin-bottom:24px;">
@@ -88,6 +89,19 @@ async function renderPassbookDetailBody(container, farmer) {
   document.getElementById('pd-back').onclick = () => navigate('passbooks');
   document.getElementById('pd-edit').onclick = () => navigate('passbookForm', { id: farmer.passbook_id });
   document.getElementById('pd-print').onclick = () => printPassbookId(farmer);
+  document.getElementById('pd-delete').onclick = async () => {
+    const ok = await confirmDialog(
+      `Delete the passbook for <b>${name}</b> (${farmer.passbook_id})? Their delivery history will be kept for records, but they will no longer appear in Passbooks, Reports, or search. This cannot be undone from this device.`,
+      'Delete Passbook'
+    );
+    if (!ok) return;
+    farmer.is_deleted = true;
+    farmer.last_updated = new Date().toISOString();
+    await db.farmers.put(farmer);
+    await queueSync('farmers', 'upsert', farmer);
+    showToast('Passbook deleted.', 'success');
+    navigate('passbooks');
+  };
   document.getElementById('pd-record-delivery').onclick = () => {
     openRecordDeliveryModal(farmer, async () => {
       const fresh = await db.farmers.get(farmer.passbook_id);

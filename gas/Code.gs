@@ -81,7 +81,7 @@ function jsonResponse(data) {
 // like RSBSA numbers, phone numbers, or serial IDs as dates or numbers.
 const NUMERIC_OR_DATE_COLUMNS = new Set([
   'hectarage', 'capacity_bags', 'num_bags', 'net_kilos', 'net_bags_equivalent',
-  'custom_quota_bags', 'year', 'birth_date'
+  'custom_quota_bags', 'year'
 ]);
 
 /** Forces every non-numeric/non-date column to plain-text format so Sheets

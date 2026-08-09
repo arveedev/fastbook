@@ -75,11 +75,36 @@ async function renderPassbookList(filterType, query) {
         <div class="sub">${f.passbook_id} · RSBSA ${f.rsbsa_no || '—'}</div>
       </div>
       <span class="badge ${f.passbook_type === 'Master' ? 'badge-green' : 'badge-navy'}">${f.passbook_type === 'Master' ? 'MB' : 'FB'}</span>
+      <button class="icon-btn list-delete-btn" data-id="${f.passbook_id}" data-name="${name.replace(/"/g, '&quot;')}" style="background:rgba(198,40,40,0.1); color:var(--danger); width:34px; height:34px; flex-shrink:0;" title="Delete passbook">✕</button>
       <span class="chev">${icon('chev', 18)}</span>
     </div>`;
   }).join('');
 
   host.querySelectorAll('.list-item').forEach(item => {
-    item.onclick = () => navigate('passbookDetail', { id: item.dataset.id });
+    item.onclick = (e) => {
+      if (e.target.closest('.list-delete-btn')) return;
+      navigate('passbookDetail', { id: item.dataset.id });
+    };
+  });
+
+  host.querySelectorAll('.list-delete-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const name = btn.dataset.name;
+      const ok = await confirmDialog(
+        `Delete the passbook for <b>${name}</b> (${id})? Their delivery history will be kept for records, but they will no longer appear in Passbooks, Reports, or search. This cannot be undone from this device.`,
+        'Delete Passbook'
+      );
+      if (!ok) return;
+      const record = await db.farmers.get(id);
+      if (!record) return;
+      record.is_deleted = true;
+      record.last_updated = new Date().toISOString();
+      await db.farmers.put(record);
+      await queueSync('farmers', 'upsert', record);
+      showToast('Passbook deleted.', 'success');
+      renderPassbookList(filterType, query);
+    };
   });
 }
