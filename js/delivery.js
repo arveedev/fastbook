@@ -117,7 +117,7 @@ async function openRecordDeliveryModal(farmer, onSaved) {
     }
 
     const nowIso = new Date().toISOString();
-    const deliveryId = 'DLV-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const deliveryId = await generateUniqueDeliveryId();
     const record = {
       delivery_id: deliveryId,
       date_timestamp: nowIso,
@@ -150,6 +150,19 @@ async function openRecordDeliveryModal(farmer, onSaved) {
   });
 
   recompute();
+}
+
+/** delivery_id is timestamp+random and was never checked for uniqueness —
+ *  a rapid double-tap or bulk entry within the same millisecond had a small
+ *  but real chance of colliding, and Dexie's put() would silently overwrite
+ *  the earlier delivery rather than erroring. Regenerate on the rare
+ *  collision instead of trusting randomness alone. */
+async function generateUniqueDeliveryId() {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = 'DLV-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+    if (!(await db.deliveries.get(candidate))) return candidate;
+  }
+  return 'DLV-' + Date.now().toString(36).toUpperCase() + '-' + crypto.randomUUID().slice(0, 8).toUpperCase();
 }
 
 /** Renders one delivery history row with Edit/Delete actions. */
@@ -200,12 +213,23 @@ function bindDeliveryHistoryActions(container, farmer, onChange) {
   });
 }
 
-/** Modal to edit an existing delivery's warehouse, variety, bags, and kilos. */
+/** Modal to edit an existing delivery's warehouse, variety, bags, and kilos.
+ *  Re-checks the seasonal allowance the same way the create flow does — the
+ *  edit flow previously let anyone silently push an existing delivery's
+ *  bags past quota with no warning and no override trail. */
 async function openEditDeliveryModal(delivery, farmer, onSaved) {
   const settings = await getAllSettings();
   const bagWeight = Number(settings.BAG_WEIGHT_KG || 50);
   const warehouses = await db.warehouses.filter(w => !w.is_deleted && w.status === 'Active').toArray();
   warehouses.sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name));
+
+  const allowance = await computeSeasonalAllowance(farmer);
+  // computeSeasonalAllowance's remaining balance already has THIS delivery's
+  // current value subtracted out (it's already in db.deliveries) — add it
+  // back so the check below compares the new value against the balance
+  // available excluding this delivery, not double-counting it.
+  const oldNetBags = Number(delivery.net_bags_equivalent || delivery.num_bags || 0);
+  const balanceExcludingThis = allowance.remainingBalanceBags + oldNetBags;
 
   const backdrop = openModal(`
     <div class="modal-header">
@@ -228,21 +252,59 @@ async function openEditDeliveryModal(delivery, farmer, onSaved) {
         <div class="field"><label>Number of Bags <span class="req">*</span></label><input type="text" inputmode="numeric" id="ed-bags" class="input-guided" required value="${formatComma(delivery.num_bags)}"></div>
         <div class="field"><label>Net Kilograms <span class="req">*</span></label><input type="text" inputmode="decimal" id="ed-kilos" class="input-guided" value="${formatComma(delivery.net_kilos)}"></div>
       </div>
+      <div id="ed-warning"></div>
       <button type="submit" class="btn btn-primary btn-block mt-14">Save Changes</button>
     </form>
   `, { center: true });
 
   document.getElementById('ed-close').onclick = () => closeModal(backdrop);
-  attachLiveCommaFormatter(document.getElementById('ed-bags'));
-  attachLiveCommaFormatter(document.getElementById('ed-kilos'));
+  const bagsInput = document.getElementById('ed-bags');
+  const kilosInput = document.getElementById('ed-kilos');
+  attachLiveCommaFormatter(bagsInput);
+  attachLiveCommaFormatter(kilosInput);
+
+  function recomputeEditWarning() {
+    const bags = unformatNumber(bagsInput.value);
+    const kilos = unformatNumber(kilosInput.value) || bags * bagWeight;
+    const netBags = kilos > 0 ? kilos / bagWeight : bags;
+    const warnHost = document.getElementById('ed-warning');
+    if (netBags > balanceExcludingThis) {
+      warnHost.innerHTML = `<div class="toast warn" style="position:static;display:block;text-align:left;margin:10px 0 0;animation:none;">
+        ⚠ This change (${formatComma(Math.round(netBags * 100) / 100)} Net Bags) exceeds the remaining seasonal balance (${formatComma(balanceExcludingThis)} Net Bags).
+        ${AppState.currentUser.role === 'Admin' ? 'As Admin, you may override with an audit comment below.' : 'Standard users cannot save this change.'}
+      </div>
+      ${AppState.currentUser.role === 'Admin' ? `
+        <div class="field mt-8"><label>Admin Override — Audit Comment <span class="req">*</span></label>
+        <textarea id="ed-override-comment" rows="2" placeholder="Explain reason for exceeding seasonal allowance...">${delivery.override_comment || ''}</textarea></div>
+      ` : ''}`;
+    } else {
+      warnHost.innerHTML = '';
+    }
+  }
+  bagsInput.addEventListener('input', recomputeEditWarning);
+  kilosInput.addEventListener('input', recomputeEditWarning);
+  recomputeEditWarning();
 
   document.getElementById('edit-delivery-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const bags = unformatNumber(document.getElementById('ed-bags').value);
-    const kilos = unformatNumber(document.getElementById('ed-kilos').value) || bags * bagWeight;
+    const bags = unformatNumber(bagsInput.value);
+    const kilos = unformatNumber(kilosInput.value) || bags * bagWeight;
     const netBags = kilos > 0 ? kilos / bagWeight : bags;
 
     if (bags <= 0) { showToast('Please enter the number of bags.', 'error'); return; }
+
+    if (netBags > balanceExcludingThis) {
+      if (AppState.currentUser.role !== 'Admin') {
+        showToast('Update blocked: exceeds remaining seasonal balance.', 'error');
+        return;
+      }
+      const commentEl = document.getElementById('ed-override-comment');
+      if (!commentEl || !commentEl.value.trim()) {
+        showToast('An audit comment is required to override the seasonal allowance.', 'error');
+        return;
+      }
+      delivery.override_comment = commentEl.value.trim();
+    }
 
     delivery.warehouse_name = document.getElementById('ed-warehouse').value;
     delivery.variety = document.getElementById('ed-variety').value;
