@@ -62,8 +62,10 @@ async function renderGeneralSettings(host, isAdmin) {
       <div class="card-title">Database Maintenance</div>
       <p class="text-sm text-muted mb-14">Repairs the cloud backend's spreadsheet schema (adds missing sheets/columns) without deleting any existing data. Requires a configured backend URL.</p>
       <button class="btn btn-outline btn-block" id="trigger-repair">Trigger Database Repair Routine</button>
-      <p class="text-sm text-muted mb-14 mt-14">Removes duplicate farmer records (same name + RSBSA no.) that resulted from a Sheet being bulk-imported more than once. Keeps the earliest passbook ID per farmer; the rest are marked deleted so every device drops them on next sync.</p>
+      <p class="text-sm text-muted mb-14 mt-14">Removes duplicate farmer records (same name + RSBSA no.) that resulted from a Sheet being bulk-imported more than once. Keeps the earliest passbook ID per farmer; the rest are marked deleted so every device drops them on next sync. This now also runs automatically every day, so future duplicates get cleaned up without needing this button.</p>
       <button class="btn btn-outline btn-block" id="trigger-dedupe">Remove Duplicate Farmer Records</button>
+      <p class="text-sm text-muted mb-14 mt-14">Renumbers passbook IDs into a clean, gapless sequence and updates any delivery records that reference them. <strong>Only use this before any passbook ID has been printed on a physical card/QR code</strong> — renumbering after that invalidates the printed ID.</p>
+      <button class="btn btn-outline btn-block" id="trigger-renumber">Renumber Passbook IDs</button>
     </div>` : ''}
   `;
 
@@ -108,6 +110,24 @@ async function renderGeneralSettings(host, isAdmin) {
           runSync().catch(() => {});
         } else {
           showToast(result.message || 'Dedupe failed.', 'error');
+        }
+      } catch (err) {
+        showToast('Could not reach backend: ' + err.message, 'error');
+      }
+    };
+    document.getElementById('trigger-renumber').onclick = async () => {
+      const ok = await confirmDialog('Renumber all passbook IDs into a clean sequence? Only do this if no passbook ID has been printed on a physical card or QR code yet — any already-issued ID/QR becomes invalid once its number changes. This cannot be undone from within the app.', 'Renumber Passbook IDs');
+      if (!ok) return;
+      try {
+        showToast('Contacting backend...', 'info');
+        const result = await triggerRemoteRenumber();
+        if (result.status === 'success') {
+          openModal(`<div class="modal-header"><h3>Renumber Complete</h3></div>
+            <ul style="font-size:12.5px; padding-left:18px;">${(result.log || []).map(l => `<li>${l}</li>`).join('')}</ul>
+            <button class="btn btn-primary btn-block mt-14" onclick="this.closest('.modal-backdrop').remove()">Close</button>`, { center: true });
+          runSync().catch(() => {});
+        } else {
+          showToast(result.message || 'Renumber failed.', 'error');
         }
       } catch (err) {
         showToast('Could not reach backend: ' + err.message, 'error');

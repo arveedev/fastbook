@@ -57,6 +57,7 @@ function doGet(e) {
   if (action === 'getInitialData') return jsonResponse(getInitialData(e.parameter.since));
   if (action === 'dedupeFarmers') return jsonResponse(dedupeFarmers());
   if (action === 'vacuumDeleted') return jsonResponse(runVacuum());
+  if (action === 'renumberPassbookIds') return jsonResponse(renumberPassbookIds());
   return jsonResponse({ status: 'error', message: 'Invalid GET endpoint request' });
 }
 
@@ -279,6 +280,125 @@ function dedupeFarmers() {
   };
 }
 
+/**
+ * Renumbers surviving Farmers passbook_ids into a clean, gapless sequence
+ * per prefix (region/branch/year/type) — cleans up the sparse numbering
+ * left behind once dedupeFarmers() removes most rows out of each
+ * duplicate-import batch (e.g. survivors like ...FB-0002, ...FB-0235,
+ * ...FB-1077 become ...FB-0001, ...FB-0002, ...FB-0003).
+ *
+ * Implemented as soft-delete-old + insert-new, never an in-place edit of
+ * passbook_id: that column is the client's local primary key, and the sync
+ * protocol only understands insert / update-by-key / delete — it has no way
+ * to recognize "this is the same row, renamed." An in-place edit would
+ * silently orphan the old record on every device that already synced it.
+ * Cascades the rename into Deliveries, where delivery_id (not passbook_id)
+ * is the primary key, so that update is a normal, safe field edit.
+ *
+ * WARNING (admin judgment call, not enforced by the code): only run this
+ * before passbook IDs are printed/handed out. Any already-issued physical
+ * ID card or QR code becomes invalid once its passbook_id changes.
+ */
+function renumberPassbookIds() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const farmersSheet = ss.getSheetByName('Farmers');
+  if (!farmersSheet || farmersSheet.getLastRow() <= 1) {
+    return { status: 'success', renamed: 0, log: ['Farmers sheet is empty — nothing to renumber.'] };
+  }
+
+  const values = farmersSheet.getDataRange().getValues();
+  const headers = values[0];
+  const pbIdx = headers.indexOf('passbook_id');
+  const luIdx = headers.indexOf('last_updated');
+  const delIdx = headers.indexOf('is_deleted');
+
+  const ID_RE = /^(.*-)(\d+)$/;
+  const groups = {}; // prefix -> [{ rowIdx, seq, width }]
+
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    if (row[delIdx] === true || row[delIdx] === 'TRUE') continue;
+    const m = ID_RE.exec(String(row[pbIdx]));
+    if (!m) continue; // unexpected format — leave untouched rather than guess
+    const prefix = m[1];
+    (groups[prefix] = groups[prefix] || []).push({ rowIdx: r, seq: parseInt(m[2], 10), width: m[2].length });
+  }
+
+  const renameMap = {}; // oldId -> newId
+  const newFarmerRows = [];
+  const now = new Date().toISOString();
+
+  Object.keys(groups).forEach(prefix => {
+    const group = groups[prefix];
+    group.sort((a, b) => a.seq - b.seq);
+    group.forEach((entry, i) => {
+      const newId = prefix + String(i + 1).padStart(entry.width, '0');
+      const oldRow = values[entry.rowIdx];
+      const oldId = oldRow[pbIdx];
+      if (newId === oldId) return;
+
+      renameMap[oldId] = newId;
+
+      // Soft-delete the old row in place (flip flags on a copy of `values`,
+      // written back below — the loop below still reads the pre-flip row).
+      values[entry.rowIdx][delIdx] = true;
+      values[entry.rowIdx][luIdx] = now;
+
+      newFarmerRows.push(headers.map((h, colIdx) => {
+        if (h === 'passbook_id') return newId;
+        if (h === 'last_updated') return now;
+        if (h === 'is_deleted') return false;
+        return oldRow[colIdx];
+      }));
+    });
+  });
+
+  const renamedCount = Object.keys(renameMap).length;
+  if (renamedCount === 0) {
+    return { status: 'success', renamed: 0, log: ['Passbook IDs are already sequential — nothing to renumber.'] };
+  }
+
+  const luCol = values.slice(1).map(row => [row[luIdx]]);
+  const delCol = values.slice(1).map(row => [row[delIdx]]);
+  farmersSheet.getRange(2, luIdx + 1, luCol.length, 1).setValues(luCol);
+  farmersSheet.getRange(2, delIdx + 1, delCol.length, 1).setValues(delCol);
+  farmersSheet.getRange(farmersSheet.getLastRow() + 1, 1, newFarmerRows.length, headers.length).setValues(newFarmerRows);
+
+  // Cascade into Deliveries — a normal field update, not a rename, since
+  // delivery_id (unaffected here) is that sheet's primary key.
+  let deliveriesUpdated = 0;
+  const deliveriesSheet = ss.getSheetByName('Deliveries');
+  if (deliveriesSheet && deliveriesSheet.getLastRow() > 1) {
+    const dValues = deliveriesSheet.getDataRange().getValues();
+    const dHeaders = dValues[0];
+    const dPbIdx = dHeaders.indexOf('passbook_id');
+    const dLuIdx = dHeaders.indexOf('last_updated');
+    for (let r = 1; r < dValues.length; r++) {
+      const oldId = dValues[r][dPbIdx];
+      if (renameMap[oldId]) {
+        dValues[r][dPbIdx] = renameMap[oldId];
+        dValues[r][dLuIdx] = now;
+        deliveriesUpdated++;
+      }
+    }
+    if (deliveriesUpdated > 0) {
+      const dPbCol = dValues.slice(1).map(row => [row[dPbIdx]]);
+      const dLuCol = dValues.slice(1).map(row => [row[dLuIdx]]);
+      deliveriesSheet.getRange(2, dPbIdx + 1, dPbCol.length, 1).setValues(dPbCol);
+      deliveriesSheet.getRange(2, dLuIdx + 1, dLuCol.length, 1).setValues(dLuCol);
+    }
+  }
+
+  return {
+    status: 'success',
+    renamed: renamedCount,
+    log: [
+      `Renumbered ${renamedCount} passbook ID(s) into a clean sequence (old IDs soft-deleted, new IDs inserted — will sync to all devices as usual).`,
+      `Updated ${deliveriesUpdated} delivery record(s) to reference the new passbook ID.`
+    ]
+  };
+}
+
 /* ---------------------------------------------------------------------- *
  *  AUTOMATIC VACUUM
  *  Soft-deleted rows (is_deleted = true) can't be physically removed from
@@ -334,8 +454,13 @@ function runVacuum() {
   return { status: 'success', removed: total, log: log };
 }
 
-/** Entry point for the installed time-driven trigger. */
+/** Entry point for the installed time-driven trigger. Re-running dedupe here
+ *  (not just vacuum) is what makes duplicate cleanup permanent: any future
+ *  duplicate — from someone pasting into the Sheet directly, a repeated
+ *  import, anything that bypasses the app — gets caught and soft-deleted
+ *  automatically within a day, without needing the Settings button again. */
 function dailyVacuumJob() {
+  dedupeFarmers();
   runVacuum();
 }
 

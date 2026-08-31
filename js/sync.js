@@ -246,6 +246,14 @@ async function triggerRemoteDedupe() {
   return await parseJsonResponse(res);
 }
 
+/** Calls the backend's passbook_id renumbering routine (Admin only). */
+async function triggerRemoteRenumber() {
+  const url = await getGasUrl();
+  if (!url) throw new Error('No backend URL configured in Settings.');
+  const res = await fetch(`${url}?action=renumberPassbookIds`, { method: 'GET' });
+  return await parseJsonResponse(res);
+}
+
 /** Authenticates a PIN against the remote backend (used as a fallback / cross-device check). */
 async function authenticateRemote(pinHash) {
   const url = await getGasUrl();
