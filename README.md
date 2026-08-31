@@ -118,6 +118,22 @@ Setup:
 7. Tap **Sync Now** any time, or let it sync automatically whenever the
    device regains connectivity.
 
+**When you update `gas/Code.gs` in the future:** saving code in the Apps
+Script editor does *not* update the live `/exec` Web App URL — you must
+also go to **Deploy → Manage deployments → (edit icon) → Version: New
+version → Deploy** or your changes never take effect for real users.
+
+If a code change adds a capability the script hasn't used before (e.g. this
+project's automatic vacuum trigger, which needs permission to create
+time-based triggers), the deployed Web App will silently fail on that
+specific action — calls to it come back as an HTML sign-in page instead of
+JSON, which browsers report as a CORS error even though the real cause is
+an unauthorized scope. Fix: open the Apps Script editor, pick any function
+in the Run dropdown, click **Run**, and click through the "Authorization
+required" prompt (Review permissions → Advanced → Go to project (unsafe) →
+Allow). That one manual run grants the new permission to the whole project,
+including the deployed Web App — no redeploy needed for that part.
+
 The backend performs delta sync only (`last_updated > since`), and pushes
 locally queued changes in a single batch — matching the PRD's sync engine
 design exactly.
