@@ -15,6 +15,16 @@
  *    Admin account (PIN: 123456).
  */
 
+/**
+ * Creates a custom menu in the Google Sheets UI.
+ */
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('Data Schema')
+    .addItem('Get Specific Sheet Schema', 'showSchemaPicker')
+    .addToUi();
+}
+
 // Define Mandatory Spreadsheet Schemas
 const DB_SCHEMA = {
   Users: [
@@ -81,7 +91,7 @@ function jsonResponse(data) {
 // like RSBSA numbers, phone numbers, or serial IDs as dates or numbers.
 const NUMERIC_OR_DATE_COLUMNS = new Set([
   'hectarage', 'capacity_bags', 'num_bags', 'net_kilos', 'net_bags_equivalent',
-  'custom_quota_bags', 'year'
+  'custom_quota_bags', 'year', 'birth_date'
 ]);
 
 /** Forces every non-numeric/non-date column to plain-text format so Sheets
@@ -331,4 +341,176 @@ function processPushSync(payload) {
   });
 
   return { status: 'success', summary: summary };
+}
+
+/**
+ * Gets all sheet names for the picker
+ */
+function getSheetList() {
+  return SpreadsheetApp.getActiveSpreadsheet().getSheets().map(s => s.getName());
+}
+
+/**
+ * Generates a highly compact JSON for a SINGLE specific sheet
+ * Optimized for AI token limits by removing metadata, structure definitions,
+ * dropping entirely empty cells and rows, extracting column widths, and
+ * prioritizing raw formulas over calculated values.
+ */
+function getSingleSheetSchema(sheetName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) return JSON.stringify({ error: "Sheet not found" });
+
+  const range = sheet.getDataRange();
+  const values = range.getValues();
+  const formulas = range.getFormulas(); // Fetch formulas for the entire data range
+  const numCols = range.getLastColumn();
+
+  // Handle empty sheet scenario
+  if (values.length === 0 || (values.length === 1 && values[0].join('') === '')) {
+    return JSON.stringify({ [sheetName]: "Empty Sheet" }, null, 2);
+  }
+
+  // Treat row 1 as headers
+  const headers = values[0];
+  const dataRows = values.slice(1);
+  const formulaRows = formulas.slice(1);
+
+  // Capture Column Widths formatting mapped to headers or fallback column keys
+  const columnWidths = {};
+  headers.forEach((header, index) => {
+    const key = header || `Col_${index + 1}`;
+    columnWidths[key] = sheet.getColumnWidth(index + 1);
+  });
+
+  const compactData = [];
+
+  // Map rows into compact objects, prioritizing formulas over values
+  dataRows.forEach((row, rowIndex) => {
+    let rowObj = {};
+    let hasData = false;
+
+    headers.forEach((header, index) => {
+      // Check if a formula exists in this cell; fallback to the raw value if not
+      let val = formulaRows[rowIndex][index] || row[index];
+
+      // Only include cells that actually have data
+      if (val !== "" && val !== null) {
+        const key = header || `Col_${index + 1}`;
+
+        // Convert dates to ISO strings (only applies to static values, formulas are strings)
+        if (Object.prototype.toString.call(val) === '[object Date]') {
+          val = val.toISOString();
+        }
+
+        rowObj[key] = val;
+        hasData = true;
+      }
+    });
+
+    // Only push rows that contain actual data (ignores blank rows)
+    if (hasData) {
+      compactData.push(rowObj);
+    }
+  });
+
+  // Wrap the data and structural formatting inside an object named after the sheet
+  const schema = {
+    [sheetName]: {
+      columnWidths: columnWidths,
+      rows: compactData
+    }
+  };
+
+  return JSON.stringify(schema, null, 2);
+}
+
+/**
+ * Displays the Picker Modal
+ */
+function showSchemaPicker() {
+  const htmlContent = `
+    <html>
+      <head>
+        <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+        <style>
+          body { padding: 20px; font-family: sans-serif; }
+          select { width: 100%; padding: 8px; margin-bottom: 15px; }
+          pre { background: #f4f4f4; padding: 10px; border: 1px solid #ddd; height: 250px; overflow: auto; font-size: 11px; display: none; white-space: pre-wrap; word-wrap: break-word; }
+          .controls { display: flex; gap: 10px; margin-bottom: 10px; }
+          #loading { display: none; font-size: 12px; color: #666; margin-top: 5px; }
+        </style>
+      </head>
+      <body>
+        <label>Select Sheet to Analyze:</label>
+        <select id="sheetSelect"></select>
+
+        <div class="controls">
+          <button class="action" id="genBtn" onclick="generate()">Generate JSON</button>
+          <button id="copyBtn" style="display:none;" onclick="copyToClipboard()">Copy JSON</button>
+        </div>
+        <div id="loading">Extracting all data... please wait.</div>
+
+        <pre id="output"></pre>
+
+        <script>
+          // Populate dropdown on load
+          google.script.run.withSuccessHandler(list => {
+            const select = document.getElementById('sheetSelect');
+            list.forEach(name => {
+              const opt = document.createElement('option');
+              opt.value = name;
+              opt.innerHTML = name;
+              select.appendChild(opt);
+            });
+          }).getSheetList();
+
+          function generate() {
+            const name = document.getElementById('sheetSelect').value;
+            const btn = document.getElementById('genBtn');
+            const loading = document.getElementById('loading');
+            const output = document.getElementById('output');
+            const copyBtn = document.getElementById('copyBtn');
+
+            // UI Loading state to prevent multiple clicks on large sheets
+            btn.disabled = true;
+            loading.style.display = 'block';
+            output.style.display = 'none';
+            copyBtn.style.display = 'none';
+
+            google.script.run.withSuccessHandler(json => {
+              output.innerText = json;
+              output.style.display = 'block';
+              copyBtn.style.display = 'inline-block';
+              btn.disabled = false;
+              loading.style.display = 'none';
+            }).getSingleSheetSchema(name);
+          }
+
+          function copyToClipboard() {
+            const text = document.getElementById('output').innerText;
+            const elem = document.createElement('textarea');
+            document.body.appendChild(elem);
+            elem.value = text;
+            elem.select();
+            document.execCommand('copy');
+            document.body.removeChild(elem);
+
+            const copyBtn = document.getElementById('copyBtn');
+            const originalText = copyBtn.innerText;
+            copyBtn.innerText = 'Copied!';
+            setTimeout(() => { copyBtn.innerText = originalText; }, 2000);
+          }
+        </script>
+      </body>
+    </html>
+  `;
+
+  const htmlOutput = HtmlService.createHtmlOutput(htmlContent)
+      .setWidth(450)
+      .setHeight(450)
+      .setTitle('Select Sheet for AI Context');
+
+  SpreadsheetApp.getUi().showModalDialog(htmlOutput, ' ');
 }
