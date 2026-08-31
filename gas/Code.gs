@@ -97,12 +97,27 @@ const NUMERIC_OR_DATE_COLUMNS = new Set([
   'custom_quota_bags', 'year', 'birth_date'
 ]);
 
-/** Forces every non-numeric/non-date column to plain-text format so Sheets
- *  never auto-converts values like "05-12-34-000123" into a date. Applied to
- *  a generous row range so it also protects rows added after this runs. */
+// is_deleted must stay a real boolean, never plain text: forcing its column
+// to text format ('@') makes Sheets store any write of the JS boolean false
+// as the literal string "false" — which every `!record.is_deleted` check in
+// the app then reads as truthy (deleted), silently hiding the record. This
+// bit everyone the first time dedupeFarmers() rewrote the whole column.
+const BOOLEAN_COLUMNS = new Set(['is_deleted']);
+
+/** Forces every non-numeric/non-date/non-boolean column to plain-text format
+ *  so Sheets never auto-converts values like "05-12-34-000123" into a date.
+ *  Applied to a generous row range so it also protects rows added after
+ *  this runs. */
 function enforceTextColumnFormats(sheet, headers) {
   const maxRows = Math.max(sheet.getMaxRows(), 5000);
   headers.forEach((header, idx) => {
+    if (BOOLEAN_COLUMNS.has(header)) {
+      // Actively undo the '@' text format every earlier repair run applied
+      // here (before is_deleted was excluded) — otherwise cells stay stuck
+      // as text even though we've stopped re-applying '@' going forward.
+      sheet.getRange(2, idx + 1, maxRows - 1, 1).setNumberFormat('General');
+      return;
+    }
     if (NUMERIC_OR_DATE_COLUMNS.has(header)) return;
     sheet.getRange(2, idx + 1, maxRows - 1, 1).setNumberFormat('@');
   });
@@ -137,6 +152,33 @@ function backfillMissingLastUpdated(sheet, headers) {
 
   if (count > 0) range.setValues(values);
   return count;
+}
+
+/** Repairs is_deleted cells that got stored as the literal text "true"/
+ *  "false" (a Google Sheets quirk: writing a JS boolean into a cell that
+ *  has plain-text ('@') number format stores it as a string, not a real
+ *  boolean) back into real booleans. Every `!record.is_deleted` check in
+ *  the app treats a non-empty string — including "false" — as truthy, so a
+ *  row stuck this way is silently hidden everywhere despite not actually
+ *  being deleted. */
+function normalizeBooleanColumns(sheet, headers) {
+  let totalFixed = 0;
+  headers.forEach((header, idx) => {
+    if (!BOOLEAN_COLUMNS.has(header) || sheet.getLastRow() <= 1) return;
+    const numRows = sheet.getLastRow() - 1;
+    const range = sheet.getRange(2, idx + 1, numRows, 1);
+    const values = range.getValues();
+    let count = 0;
+    for (let i = 0; i < values.length; i++) {
+      const cell = values[i][0];
+      if (typeof cell === 'boolean') continue;
+      if (cell === 'true' || cell === 'TRUE') { values[i][0] = true; count++; }
+      else if (cell === 'false' || cell === 'FALSE' || cell === '') { values[i][0] = false; count++; }
+    }
+    if (count > 0) range.setValues(values);
+    totalFixed += count;
+  });
+  return totalFixed;
 }
 
 function initializeOrRepairDB() {
@@ -176,6 +218,11 @@ function initializeOrRepairDB() {
     const backfilled = backfillMissingLastUpdated(sheet, DB_SCHEMA[sheetName]);
     if (backfilled > 0) {
       log.push(`Backfilled 'last_updated' on ${backfilled} row(s) in '${sheetName}' (rows with a blank last_updated were invisible to delta sync)`);
+    }
+
+    const normalized = normalizeBooleanColumns(sheet, DB_SCHEMA[sheetName]);
+    if (normalized > 0) {
+      log.push(`Fixed ${normalized} is_deleted cell(s) in '${sheetName}' that had been stored as text ("true"/"false") instead of a real boolean, which was hiding those records from every device.`);
     }
   });
 
@@ -254,23 +301,24 @@ function dedupeFarmers() {
 
   const now = new Date().toISOString();
   let removed = 0;
+  const changedRows = []; // 1-based sheet row numbers, for a targeted write below
 
   Object.values(groups).forEach(rowIndexes => {
     if (rowIndexes.length < 2) return;
     rowIndexes.sort((a, b) => String(values[a][pbIdx]).localeCompare(String(values[b][pbIdx])));
     for (let i = 1; i < rowIndexes.length; i++) {
       const idx = rowIndexes[i];
-      values[idx][delIdx] = true;
-      values[idx][luIdx] = now;
+      changedRows.push(idx + 1);
       removed++;
     }
   });
 
+  // Write only the rows that actually changed — never rewrite untouched
+  // survivor rows. (Both changed values are identical across every changed
+  // row here, so RangeList.setValue can do it in two calls.)
   if (removed > 0) {
-    const luCol = values.slice(1).map(row => [row[luIdx]]);
-    const delCol = values.slice(1).map(row => [row[delIdx]]);
-    sheet.getRange(2, luIdx + 1, luCol.length, 1).setValues(luCol);
-    sheet.getRange(2, delIdx + 1, delCol.length, 1).setValues(delCol);
+    sheet.getRangeList(changedRows.map(r => sheet.getRange(r, delIdx + 1).getA1Notation())).setValue(true);
+    sheet.getRangeList(changedRows.map(r => sheet.getRange(r, luIdx + 1).getA1Notation())).setValue(now);
   }
 
   const result = {
@@ -336,6 +384,7 @@ function renumberPassbookIds() {
 
   const renameMap = {}; // oldId -> newId
   const newFarmerRows = [];
+  const changedRows = []; // 1-based sheet row numbers of soft-deleted old rows
   const now = new Date().toISOString();
 
   Object.keys(groups).forEach(prefix => {
@@ -348,11 +397,7 @@ function renumberPassbookIds() {
       if (newId === oldId) return;
 
       renameMap[oldId] = newId;
-
-      // Soft-delete the old row in place (flip flags on a copy of `values`,
-      // written back below — the loop below still reads the pre-flip row).
-      values[entry.rowIdx][delIdx] = true;
-      values[entry.rowIdx][luIdx] = now;
+      changedRows.push(entry.rowIdx + 1);
 
       newFarmerRows.push(headers.map((h, colIdx) => {
         if (h === 'passbook_id') return newId;
@@ -368,10 +413,10 @@ function renumberPassbookIds() {
     return { status: 'success', renamed: 0, log: ['Passbook IDs are already sequential — nothing to renumber.'] };
   }
 
-  const luCol = values.slice(1).map(row => [row[luIdx]]);
-  const delCol = values.slice(1).map(row => [row[delIdx]]);
-  farmersSheet.getRange(2, luIdx + 1, luCol.length, 1).setValues(luCol);
-  farmersSheet.getRange(2, delIdx + 1, delCol.length, 1).setValues(delCol);
+  // Soft-delete only the old rows that actually got renamed — never rewrite
+  // untouched rows.
+  farmersSheet.getRangeList(changedRows.map(r => farmersSheet.getRange(r, delIdx + 1).getA1Notation())).setValue(true);
+  farmersSheet.getRangeList(changedRows.map(r => farmersSheet.getRange(r, luIdx + 1).getA1Notation())).setValue(now);
   farmersSheet.getRange(farmersSheet.getLastRow() + 1, 1, newFarmerRows.length, headers.length).setValues(newFarmerRows);
 
   // Cascade into Deliveries — a normal field update, not a rename, since

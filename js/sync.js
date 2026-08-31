@@ -215,7 +215,16 @@ async function pullRemoteChanges(url, logFn) {
         if (localTable === 'systemSettings' && DEVICE_LOCAL_SETTING_KEYS.includes(row.setting_key)) continue;
 
         const pk = Object.keys(row)[0];
-        if (row.is_deleted === true || row.is_deleted === 'TRUE') {
+        // Google Sheets can hand back is_deleted as the literal string
+        // "true"/"false" instead of a real boolean (a plain-text-formatted
+        // cell stores whatever was last written to it as text). Normalize
+        // here, once, so every `!record.is_deleted` check throughout the
+        // app can keep trusting it's a real boolean — a stray truthy string
+        // would otherwise silently hide the record everywhere downstream.
+        if ('is_deleted' in row) {
+          row.is_deleted = row.is_deleted === true || row.is_deleted === 'TRUE' || row.is_deleted === 'true';
+        }
+        if (row.is_deleted === true) {
           await db[localTable].delete(row[pk]);
         } else {
           await db[localTable].put(row);
