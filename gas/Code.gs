@@ -55,6 +55,7 @@ function doGet(e) {
   const action = e.parameter ? e.parameter.action : null;
   if (action === 'initDB') return jsonResponse(initializeOrRepairDB());
   if (action === 'getInitialData') return jsonResponse(getInitialData(e.parameter.since));
+  if (action === 'dedupeFarmers') return jsonResponse(dedupeFarmers());
   return jsonResponse({ status: 'error', message: 'Invalid GET endpoint request' });
 }
 
@@ -207,6 +208,70 @@ function initializeOrRepairDB() {
   }
 
   return { status: 'success', repair_logs: log };
+}
+
+/**
+ * One-time (safe to re-run) cleanup for Farmers rows that were bulk-imported
+ * into the Sheet multiple times, producing several passbook_ids for the same
+ * person. Identity is matched by first + middle + last name + RSBSA no. —
+ * verified against the actual data to be an exact match (duplicates from a
+ * repeated import are byte-identical apart from passbook_id/created_at), so
+ * no field-level merging is needed. Keeps the row with the lowest
+ * passbook_id per group and soft-deletes the rest (is_deleted = true, not a
+ * hard delete) so the existing delta-sync mechanism tells every device that
+ * already cached a duplicate passbook_id to remove it locally too.
+ */
+function dedupeFarmers() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Farmers');
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return { status: 'success', removed: 0, log: ['Farmers sheet is empty — nothing to dedupe.'] };
+  }
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+  const pbIdx = headers.indexOf('passbook_id');
+  const fnIdx = headers.indexOf('first_name');
+  const mnIdx = headers.indexOf('middle_name');
+  const lnIdx = headers.indexOf('last_name');
+  const rsbsaIdx = headers.indexOf('rsbsa_no');
+  const luIdx = headers.indexOf('last_updated');
+  const delIdx = headers.indexOf('is_deleted');
+
+  const groups = {};
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    if (row[delIdx] === true || row[delIdx] === 'TRUE') continue; // already-removed rows aren't dedupe candidates
+    const key = [row[fnIdx], row[mnIdx], row[lnIdx], row[rsbsaIdx]].join('|').toUpperCase();
+    (groups[key] = groups[key] || []).push(r);
+  }
+
+  const now = new Date().toISOString();
+  let removed = 0;
+
+  Object.values(groups).forEach(rowIndexes => {
+    if (rowIndexes.length < 2) return;
+    rowIndexes.sort((a, b) => String(values[a][pbIdx]).localeCompare(String(values[b][pbIdx])));
+    for (let i = 1; i < rowIndexes.length; i++) {
+      const idx = rowIndexes[i];
+      values[idx][delIdx] = true;
+      values[idx][luIdx] = now;
+      removed++;
+    }
+  });
+
+  if (removed > 0) {
+    const luCol = values.slice(1).map(row => [row[luIdx]]);
+    const delCol = values.slice(1).map(row => [row[delIdx]]);
+    sheet.getRange(2, luIdx + 1, luCol.length, 1).setValues(luCol);
+    sheet.getRange(2, delIdx + 1, delCol.length, 1).setValues(delCol);
+  }
+
+  return {
+    status: 'success',
+    removed: removed,
+    log: [`Removed ${removed} duplicate farmer record(s), keeping the earliest passbook_id per unique farmer (matched by name + RSBSA no.).`]
+  };
 }
 
 /**

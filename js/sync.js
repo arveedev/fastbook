@@ -237,6 +237,14 @@ async function triggerRemoteRepair() {
   return await parseJsonResponse(res);
 }
 
+/** Calls the backend's one-time farmer-deduplication routine (Admin only). */
+async function triggerRemoteDedupe() {
+  const url = await getGasUrl();
+  if (!url) throw new Error('No backend URL configured in Settings.');
+  const res = await fetch(`${url}?action=dedupeFarmers`, { method: 'GET' });
+  return await parseJsonResponse(res);
+}
+
 /** Authenticates a PIN against the remote backend (used as a fallback / cross-device check). */
 async function authenticateRemote(pinHash) {
   const url = await getGasUrl();

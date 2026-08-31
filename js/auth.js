@@ -66,6 +66,9 @@ async function attemptLogin(pin) {
     await renderAppShell();
     navigate('dashboard');
     showToast(`Welcome back, ${user.full_name.split(' ')[0]}.`, 'success');
+    // Sync immediately on login rather than waiting for the background interval,
+    // so this device is caught up with the shared backend right away.
+    if (typeof runSync === 'function') runSync().catch(() => {});
     return;
   }
 
@@ -89,6 +92,7 @@ async function attemptLogin(pin) {
         await renderAppShell();
         navigate('dashboard');
         showToast(`Welcome back, ${remote.user.full_name.split(' ')[0]}.`, 'success');
+        if (typeof runSync === 'function') runSync().catch(() => {});
         return;
       }
     } catch (err) { /* ignore, fall through to error */ }

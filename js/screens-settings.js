@@ -62,6 +62,8 @@ async function renderGeneralSettings(host, isAdmin) {
       <div class="card-title">Database Maintenance</div>
       <p class="text-sm text-muted mb-14">Repairs the cloud backend's spreadsheet schema (adds missing sheets/columns) without deleting any existing data. Requires a configured backend URL.</p>
       <button class="btn btn-outline btn-block" id="trigger-repair">Trigger Database Repair Routine</button>
+      <p class="text-sm text-muted mb-14 mt-14">Removes duplicate farmer records (same name + RSBSA no.) that resulted from a Sheet being bulk-imported more than once. Keeps the earliest passbook ID per farmer; the rest are marked deleted so every device drops them on next sync.</p>
+      <button class="btn btn-outline btn-block" id="trigger-dedupe">Remove Duplicate Farmer Records</button>
     </div>` : ''}
   `;
 
@@ -88,6 +90,24 @@ async function renderGeneralSettings(host, isAdmin) {
             <button class="btn btn-primary btn-block mt-14" onclick="this.closest('.modal-backdrop').remove()">Close</button>`, { center: true });
         } else {
           showToast(result.message || 'Repair failed.', 'error');
+        }
+      } catch (err) {
+        showToast('Could not reach backend: ' + err.message, 'error');
+      }
+    };
+    document.getElementById('trigger-dedupe').onclick = async () => {
+      const ok = await confirmDialog('Remove duplicate farmer records from the shared backend? This keeps the earliest passbook ID per farmer (matched by name + RSBSA no.) and marks the rest deleted. This cannot be undone from within the app.', 'Remove Duplicate Farmers');
+      if (!ok) return;
+      try {
+        showToast('Contacting backend...', 'info');
+        const result = await triggerRemoteDedupe();
+        if (result.status === 'success') {
+          openModal(`<div class="modal-header"><h3>Dedupe Complete</h3></div>
+            <ul style="font-size:12.5px; padding-left:18px;">${(result.log || []).map(l => `<li>${l}</li>`).join('')}</ul>
+            <button class="btn btn-primary btn-block mt-14" onclick="this.closest('.modal-backdrop').remove()">Close</button>`, { center: true });
+          runSync().catch(() => {});
+        } else {
+          showToast(result.message || 'Dedupe failed.', 'error');
         }
       } catch (err) {
         showToast('Could not reach backend: ' + err.message, 'error');
