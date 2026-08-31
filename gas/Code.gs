@@ -162,21 +162,32 @@ function backfillMissingLastUpdated(sheet, headers) {
  *  row stuck this way is silently hidden everywhere despite not actually
  *  being deleted. */
 function normalizeBooleanColumns(sheet, headers) {
+  const luIdx = headers.indexOf('last_updated');
+  const now = new Date().toISOString();
   let totalFixed = 0;
   headers.forEach((header, idx) => {
     if (!BOOLEAN_COLUMNS.has(header) || sheet.getLastRow() <= 1) return;
     const numRows = sheet.getLastRow() - 1;
     const range = sheet.getRange(2, idx + 1, numRows, 1);
     const values = range.getValues();
-    let count = 0;
+    const fixedRowNumbers = []; // 1-based sheet row numbers
     for (let i = 0; i < values.length; i++) {
       const cell = values[i][0];
       if (typeof cell === 'boolean') continue;
-      if (cell === 'true' || cell === 'TRUE') { values[i][0] = true; count++; }
-      else if (cell === 'false' || cell === 'FALSE' || cell === '') { values[i][0] = false; count++; }
+      if (cell === 'true' || cell === 'TRUE') { values[i][0] = true; fixedRowNumbers.push(i + 2); }
+      else if (cell === 'false' || cell === 'FALSE' || cell === '') { values[i][0] = false; fixedRowNumbers.push(i + 2); }
     }
-    if (count > 0) range.setValues(values);
-    totalFixed += count;
+    if (fixedRowNumbers.length > 0) {
+      range.setValues(values);
+      // A corrected row's last_updated must be bumped too, or delta sync has
+      // no signal that anything changed — every device that already cached
+      // the broken (string) value locally would otherwise never re-pull the
+      // fix and would keep showing the record as hidden indefinitely.
+      if (luIdx !== -1) {
+        sheet.getRangeList(fixedRowNumbers.map(r => sheet.getRange(r, luIdx + 1).getA1Notation())).setValue(now);
+      }
+    }
+    totalFixed += fixedRowNumbers.length;
   });
   return totalFixed;
 }
