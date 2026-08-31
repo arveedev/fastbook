@@ -31,7 +31,7 @@ async function renderDashboardBody(container) {
 
   const now = new Date();
   const activeSeason = await getActiveSeason();
-  const currentYear = now.getFullYear();
+  const currentSeasonYearKey = seasonYearKeyOfDate(now);
 
   const todayDeliveries = deliveries.filter(d => isSameDay(new Date(d.date_timestamp), now));
   const todayBags = todayDeliveries.reduce((s, d) => s + Number(d.net_bags_equivalent || d.num_bags || 0), 0);
@@ -39,8 +39,7 @@ async function renderDashboardBody(container) {
   const todayFarmers = new Set(todayDeliveries.map(d => d.passbook_id)).size;
 
   const seasonDeliveries = deliveries.filter(d => {
-    const dt = new Date(d.date_timestamp);
-    return dt.getFullYear() === currentYear && seasonOfDate(d.date_timestamp) === activeSeason;
+    return seasonYearKeyOfDate(d.date_timestamp) === currentSeasonYearKey && seasonOfDate(d.date_timestamp) === activeSeason;
   });
   const seasonActualKilos = seasonDeliveries.reduce((s, d) => s + Number(d.net_kilos || 0), 0);
   const targetBags = Number(settings.TARGET_PROCUREMENT_BAGS || 1000000);

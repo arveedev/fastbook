@@ -203,12 +203,13 @@ async function renderWarehouseSummaryReport(host) {
   ]);
   const now = new Date();
   const activeSeason = await getActiveSeason();
+  const currentSeasonYearKey = seasonYearKeyOfDate(now);
 
   let rows = warehouses.map(w => {
     const whDeliveries = deliveries.filter(d => d.warehouse_name === w.warehouse_name);
     const dayD = whDeliveries.filter(d => isSameDay(new Date(d.date_timestamp), now));
     const monthD = whDeliveries.filter(d => { const dt = new Date(d.date_timestamp); return dt.getMonth() === now.getMonth() && dt.getFullYear() === now.getFullYear(); });
-    const seasonD = whDeliveries.filter(d => seasonOfDate(d.date_timestamp) === activeSeason && new Date(d.date_timestamp).getFullYear() === now.getFullYear());
+    const seasonD = whDeliveries.filter(d => seasonOfDate(d.date_timestamp) === activeSeason && seasonYearKeyOfDate(d.date_timestamp) === currentSeasonYearKey);
     const sum = (arr, field) => arr.reduce((s, d) => s + Number(d[field] || 0), 0);
     return {
       name: w.warehouse_name,

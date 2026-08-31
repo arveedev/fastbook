@@ -187,23 +187,38 @@ async function generateSerialNumber(passbookType) {
 async function getActiveSeason() {
   const override = await getSetting('SEASON_OVERRIDE', 'AUTO');
   if (override === 'SUMMER' || override === 'MAIN') return override;
-  const month = new Date().getMonth(); // 0-11
-  return month <= 5 ? 'SUMMER' : 'MAIN';
+  return seasonOfDate(new Date());
 }
 
+// Main Cropping Season: September - February (wraps across the calendar year boundary).
+// Summer Cropping Season: March - August.
 function seasonOfDate(dateVal) {
+  const month = new Date(dateVal).getMonth(); // 0-11
+  return (month >= 8 || month <= 1) ? 'MAIN' : 'SUMMER';
+}
+
+/** Main season spans two calendar years (e.g. Sep 2026 - Feb 2027), so a
+ *  plain getFullYear() can't identify "which season instance" a date
+ *  belongs to — Jan 2027 and Sep 2026 are the same season but different
+ *  years. This returns the anchor year (the year the season started in)
+ *  so deliveries can be grouped by season instance instead of calendar year. */
+function seasonYearKeyOfDate(dateVal) {
   const d = new Date(dateVal);
-  return d.getMonth() <= 5 ? 'SUMMER' : 'MAIN';
+  const month = d.getMonth();
+  const year = d.getFullYear();
+  if (month >= 8) return year;     // Sep-Dec: season starts this year
+  if (month <= 1) return year - 1; // Jan-Feb: season started last year
+  return year;                     // Mar-Aug (Summer): single-year season
 }
 
 function seasonLabel(season) {
-  return season === 'SUMMER' ? 'Summer Cropping Season (Jan-Jun)' : 'Main Cropping Season (Jul-Dec)';
+  return season === 'SUMMER' ? 'Summer Cropping Season (Mar-Aug)' : 'Main Cropping Season (Sep-Feb)';
 }
 
 /** Computes seasonal quota, delivered bags, and remaining balance for a farmer record. */
 async function computeSeasonalAllowance(farmerRecord) {
   const now = new Date();
-  const currentYear = now.getFullYear();
+  const currentSeasonYearKey = seasonYearKeyOfDate(now);
   const activeSeason = await getActiveSeason();
 
   let totalQuotaBags = 0;
@@ -219,8 +234,7 @@ async function computeSeasonalAllowance(farmerRecord) {
     .toArray();
 
   const seasonDeliveries = allDeliveries.filter(d => {
-    const dDate = new Date(d.date_timestamp);
-    return dDate.getFullYear() === currentYear && seasonOfDate(d.date_timestamp) === activeSeason;
+    return seasonYearKeyOfDate(d.date_timestamp) === currentSeasonYearKey && seasonOfDate(d.date_timestamp) === activeSeason;
   });
 
   const deliveredBagsCount = seasonDeliveries.reduce((sum, item) => sum + Number(item.net_bags_equivalent || item.num_bags || 0), 0);
