@@ -44,8 +44,10 @@ async function getGasUrl() {
 // Bump this whenever the backend repair logic changes in a way that needs
 // to re-run on devices that already completed an earlier version of it
 // (e.g. this fix protects birth_date from Sheets' date auto-conversion,
-// which an earlier repair version didn't cover).
-const REPAIR_LOGIC_VERSION = '2';
+// which an earlier repair version didn't cover; v3 backfills a missing
+// last_updated on rows added directly to the Sheet, which were otherwise
+// invisible to every delta sync after the first).
+const REPAIR_LOGIC_VERSION = '3';
 
 /** Runs the backend's schema/format repair whenever the repair logic itself
  *  has changed since this device last ran it (tracked by version, not just

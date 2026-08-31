@@ -95,6 +95,37 @@ function enforceTextColumnFormats(sheet, headers) {
   });
 }
 
+/** Rows added directly in the Sheet (bulk paste/import) never get a
+ *  `last_updated` value written by the app. getInitialData()'s delta filter
+ *  treats a blank/unparsable last_updated as "not changed" and excludes the
+ *  row from every sync after the very first one, so such rows silently never
+ *  reach any device again. Stamping them here — and having the delta filter
+ *  fail open on unparsable values as a second line of defense — fixes both
+ *  existing rows and the pull itself. */
+function backfillMissingLastUpdated(sheet, headers) {
+  const lastUpdatedIdx = headers.indexOf('last_updated');
+  if (lastUpdatedIdx === -1 || sheet.getLastRow() <= 1) return 0;
+
+  const numRows = sheet.getLastRow() - 1;
+  const range = sheet.getRange(2, lastUpdatedIdx + 1, numRows, 1);
+  const values = range.getValues();
+  const now = new Date().toISOString();
+  let count = 0;
+
+  for (let i = 0; i < values.length; i++) {
+    const cell = values[i][0];
+    const isValidDate = Object.prototype.toString.call(cell) === '[object Date]' && !isNaN(cell.getTime());
+    const isValidString = typeof cell === 'string' && cell.trim() !== '' && !isNaN(new Date(cell).getTime());
+    if (!isValidDate && !isValidString) {
+      values[i][0] = now;
+      count++;
+    }
+  }
+
+  if (count > 0) range.setValues(values);
+  return count;
+}
+
 function initializeOrRepairDB() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const log = [];
@@ -128,6 +159,11 @@ function initializeOrRepairDB() {
 
     enforceTextColumnFormats(sheet, DB_SCHEMA[sheetName]);
     log.push(`Enforced plain-text formatting on '${sheetName}' to prevent auto-conversion of RSBSA/ID/phone values`);
+
+    const backfilled = backfillMissingLastUpdated(sheet, DB_SCHEMA[sheetName]);
+    if (backfilled > 0) {
+      log.push(`Backfilled 'last_updated' on ${backfilled} row(s) in '${sheetName}' (rows with a blank last_updated were invisible to delta sync)`);
+    }
   });
 
   // Seed Default Admin Account if Users tab is empty (Default PIN: 123456 -> SHA256 Hash)
@@ -236,6 +272,10 @@ function getInitialData(sinceTimestamp) {
     const filteredRows = values.slice(1).filter(row => {
       if (!sinceTimestamp) return true;
       const rowTime = new Date(row[lastUpdatedIdx]).getTime();
+      // A blank/unparsable last_updated (e.g. a row pasted directly into the
+      // Sheet, bypassing the app) must never be silently excluded forever —
+      // fail open and include it rather than treating NaN > queryTime as false.
+      if (isNaN(rowTime)) return true;
       return rowTime > queryTime;
     }).map(row => {
       const rowObj = {};
