@@ -263,6 +263,14 @@ async function triggerRemoteRenumber() {
   return await parseJsonResponse(res);
 }
 
+/** Calls the backend's Master (Farmer Organization) passbook backfill (Admin only). */
+async function triggerRemoteCreateMissingOrgPassbooks() {
+  const url = await getGasUrl();
+  if (!url) throw new Error('No backend URL configured in Settings.');
+  const res = await fetch(`${url}?action=createMissingOrgPassbooks`, { method: 'GET' });
+  return await parseJsonResponse(res);
+}
+
 /** Authenticates a PIN against the remote backend (used as a fallback / cross-device check). */
 async function authenticateRemote(pinHash) {
   const url = await getGasUrl();

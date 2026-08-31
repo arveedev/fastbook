@@ -66,6 +66,8 @@ async function renderGeneralSettings(host, isAdmin) {
       <button class="btn btn-outline btn-block" id="trigger-dedupe">Remove Duplicate Farmer Records</button>
       <p class="text-sm text-muted mb-14 mt-14">Renumbers passbook IDs into a clean, gapless sequence and updates any delivery records that reference them. <strong>Only use this before any passbook ID has been printed on a physical card/QR code</strong> — renumbering after that invalidates the printed ID.</p>
       <button class="btn btn-outline btn-block" id="trigger-renumber">Renumber Passbook IDs</button>
+      <p class="text-sm text-muted mb-14 mt-14">Creates a placeholder Master (Farmer Organization) passbook for every Farmer Organization that has members but no Master passbook of its own yet. Officer details are left blank for an Admin to fill in. New registrations create this automatically going forward, so this is mainly for catching up existing data.</p>
+      <button class="btn btn-outline btn-block" id="trigger-create-org">Create Missing Farmer Org Passbooks</button>
     </div>` : ''}
   `;
 
@@ -128,6 +130,22 @@ async function renderGeneralSettings(host, isAdmin) {
           runSync().catch(() => {});
         } else {
           showToast(result.message || 'Renumber failed.', 'error');
+        }
+      } catch (err) {
+        showToast('Could not reach backend: ' + err.message, 'error');
+      }
+    };
+    document.getElementById('trigger-create-org').onclick = async () => {
+      try {
+        showToast('Contacting backend...', 'info');
+        const result = await triggerRemoteCreateMissingOrgPassbooks();
+        if (result.status === 'success') {
+          openModal(`<div class="modal-header"><h3>Farmer Org Passbooks</h3></div>
+            <ul style="font-size:12.5px; padding-left:18px;">${(result.log || []).map(l => `<li>${l}</li>`).join('')}</ul>
+            <button class="btn btn-primary btn-block mt-14" onclick="this.closest('.modal-backdrop').remove()">Close</button>`, { center: true });
+          runSync().catch(() => {});
+        } else {
+          showToast(result.message || 'Failed.', 'error');
         }
       } catch (err) {
         showToast('Could not reach backend: ' + err.message, 'error');

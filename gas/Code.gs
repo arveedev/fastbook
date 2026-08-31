@@ -58,6 +58,7 @@ function doGet(e) {
   if (action === 'dedupeFarmers') return jsonResponse(dedupeFarmers());
   if (action === 'vacuumDeleted') return jsonResponse(runVacuum());
   if (action === 'renumberPassbookIds') return jsonResponse(renumberPassbookIds());
+  if (action === 'createMissingOrgPassbooks') return jsonResponse(createMissingOrgPassbooks());
   return jsonResponse({ status: 'error', message: 'Invalid GET endpoint request' });
 }
 
@@ -463,6 +464,104 @@ function renumberPassbookIds() {
       `Updated ${deliveriesUpdated} delivery record(s) to reference the new passbook ID.`
     ]
   };
+}
+
+/**
+ * Creates a placeholder Master (Farmer Organization) passbook for every
+ * distinct farmer_org value that appears on an active Individual farmer but
+ * has no matching Master record yet (matched case-insensitively). The real
+ * officer/representative details (name, birth date, gender, etc.) aren't
+ * known from existing data, so those fields are left as an obvious
+ * placeholder for an Admin to fill in later — this only makes sure the FO
+ * itself shows up in the app and can list its members.
+ */
+function createMissingOrgPassbooks() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Farmers');
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return { status: 'success', created: 0, log: ['Farmers sheet is empty — nothing to create.'] };
+  }
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+  const pbIdx = headers.indexOf('passbook_id');
+  const typeIdx = headers.indexOf('passbook_type');
+  const orgIdx = headers.indexOf('farmer_org');
+  const delIdx = headers.indexOf('is_deleted');
+
+  const existingMasterOrgs = new Set(); // lowercased
+  const individualOrgs = new Map(); // lowercased -> original-cased display value
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    if (row[delIdx] === true) continue;
+    const org = String(row[orgIdx] || '').trim();
+    if (!org) continue;
+    if (row[typeIdx] === 'Master') {
+      existingMasterOrgs.add(org.toLowerCase());
+    } else if (row[typeIdx] === 'Individual' && !individualOrgs.has(org.toLowerCase())) {
+      individualOrgs.set(org.toLowerCase(), org);
+    }
+  }
+
+  const missingOrgs = [...individualOrgs.entries()].filter(([lower]) => !existingMasterOrgs.has(lower));
+  if (missingOrgs.length === 0) {
+    return { status: 'success', created: 0, log: ['Every Farmer Organization already has a Master passbook.'] };
+  }
+
+  const nextSeq = nextPassbookSeq(values, pbIdx, 'MB');
+  const now = new Date().toISOString();
+  const newRows = missingOrgs.map(([, orgDisplay], i) => headers.map(h => {
+    if (h === 'passbook_id') return buildPassbookId('MB', nextSeq + i);
+    if (h === 'passbook_type') return 'Master';
+    if (h === 'farmer_org') return orgDisplay;
+    if (h === 'first_name') return 'Officer';
+    if (h === 'last_name') return 'TBD';
+    if (h === 'created_at' || h === 'last_updated') return now;
+    if (h === 'is_deleted') return false;
+    return '';
+  }));
+
+  sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, headers.length).setValues(newRows);
+
+  return {
+    status: 'success',
+    created: newRows.length,
+    log: [`Created ${newRows.length} placeholder Master passbook(s) for Farmer Organization(s) that didn't have one yet: ${missingOrgs.map(([, o]) => o).join(', ')}. Officer details are placeholders — open each one in the app to fill them in.`]
+  };
+}
+
+/** Shared passbook_id prefix builder — mirrors the client's generateSerialNumber()
+ *  in js/db.js so IDs created here fit the same NFA{region}-{branch}{yy}-{type}-{seq} scheme. */
+function passbookIdPrefix(typeCode) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const settingsSheet = ss.getSheetByName('SystemSettings');
+  const settings = {};
+  if (settingsSheet && settingsSheet.getLastRow() > 1) {
+    settingsSheet.getDataRange().getValues().slice(1).forEach(row => { settings[row[0]] = row[1]; });
+  }
+  const region = settings.REGION_CODE || 'V';
+  const branch = settings.BRANCH_CODE || 'ALB';
+  const yy = String(new Date().getFullYear()).slice(-2);
+  return `NFA${region}-${branch}${yy}-${typeCode}-`;
+}
+
+function buildPassbookId(typeCode, seq) {
+  return passbookIdPrefix(typeCode) + String(seq).padStart(4, '0');
+}
+
+/** Scans already-loaded Farmers `values` for the highest sequence number in
+ *  use for a given type prefix, across every row regardless of is_deleted
+ *  (a soft-deleted row's ID must still never be reissued). */
+function nextPassbookSeq(values, pbIdx, typeCode) {
+  const prefix = passbookIdPrefix(typeCode);
+  let maxSeq = 0;
+  for (let r = 1; r < values.length; r++) {
+    const id = String(values[r][pbIdx] || '');
+    if (!id.startsWith(prefix)) continue;
+    const seq = parseInt(id.slice(prefix.length), 10);
+    if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+  }
+  return maxSeq + 1;
 }
 
 /* ---------------------------------------------------------------------- *

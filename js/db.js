@@ -181,6 +181,37 @@ async function generateSerialNumber(passbookType) {
   return `${prefix}${paddedSeq}`;
 }
 
+/** Makes sure a Master (Farmer Organization) passbook exists for the given
+ *  org name, creating a placeholder one (real officer details filled in by
+ *  an Admin later) if none matches yet. Called whenever an Individual
+ *  farmer is registered with a farmer_org, so every FO shows up in the app
+ *  without needing the backend backfill re-run. Matching is by farmer_org
+ *  text, case-insensitive — there's no explicit member/org foreign key. */
+async function ensureOrgPassbookExists(orgName) {
+  const org = (orgName || '').trim();
+  if (!org) return;
+
+  const existing = await db.farmers
+    .filter(f => !f.is_deleted && f.passbook_type === 'Master' && (f.farmer_org || '').trim().toLowerCase() === org.toLowerCase())
+    .first();
+  if (existing) return;
+
+  const nowIso = new Date().toISOString();
+  const record = {
+    passbook_id: await generateSerialNumber('Master'),
+    passbook_type: 'Master',
+    first_name: 'Officer', middle_name: '', last_name: 'TBD', farmer_org: org,
+    home_province: '', home_municipality: '', home_barangay: '',
+    farm_province: '', farm_municipality: '', farm_barangay: '',
+    hectarage: '', birth_date: '', civil_status: '', spouse_name: '',
+    contact_no: '', gender: '', sector: '', irrigated: '',
+    landholding_data: '', rsbsa_no: '', custom_quota_bags: 0,
+    created_at: nowIso, last_updated: nowIso, is_deleted: false
+  };
+  await db.farmers.put(record);
+  await queueSync('farmers', 'upsert', record);
+}
+
 /* ---------------------------------------------------------------------- *
  *  SEASONAL DELIVERY QUOTA & ALLOWANCE ENGINE
  * ---------------------------------------------------------------------- */

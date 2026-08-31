@@ -410,6 +410,10 @@ async function renderWizardStepReview(container, state) {
     await db.farmers.put(record);
     await queueSync('farmers', 'upsert', record);
 
+    if (d.passbook_type === 'Individual' && d.farmer_org && d.farmer_org.trim()) {
+      ensureOrgPassbookExists(d.farmer_org).catch(() => {});
+    }
+
     renderWizardCelebration(container, record);
   };
 }

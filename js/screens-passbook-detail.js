@@ -27,6 +27,16 @@ async function renderPassbookDetailBody(container, farmer) {
     .toArray())
     .sort((a, b) => new Date(b.date_timestamp) - new Date(a.date_timestamp));
 
+  // A Master (Farmer Organization) passbook has no explicit member link —
+  // membership is matched by farmer_org text (case-insensitive) against
+  // every active Individual farmer, same as buildDisplayName's "org c/o name".
+  const members = farmer.passbook_type === 'Master' && farmer.farmer_org
+    ? (await db.farmers.filter(f =>
+        !f.is_deleted && f.passbook_type === 'Individual' &&
+        (f.farmer_org || '').trim().toLowerCase() === farmer.farmer_org.trim().toLowerCase()
+      ).toArray()).sort((a, b) => buildDisplayName(a).localeCompare(buildDisplayName(b)))
+    : [];
+
   container.innerHTML = `
     <div class="content">
       <div class="flex-between mb-14">
@@ -52,6 +62,21 @@ async function renderPassbookDetailBody(container, farmer) {
         <div style="font-size:14px; margin-top:10px;"><b>Farm Address:</b><br>${farmer.farm_barangay}, ${farmer.farm_municipality}, ${farmer.farm_province}</div>
         <div style="font-size:14px; margin-top:10px;"><b>Landholding Data:</b><br>${landholding.join(', ') || '—'}</div>
       </div>
+
+      ${farmer.passbook_type === 'Master' ? `
+      <div class="card">
+        <div class="card-title">Members (${members.length})</div>
+        ${members.length === 0 ? `<p class="text-muted text-sm">No individual farmers are linked to this organization yet.</p>` :
+          members.map(m => `
+            <div class="list-item" data-member-id="${m.passbook_id}" style="cursor:pointer;">
+              <div class="avatar">${(m.first_name || '?')[0].toUpperCase()}</div>
+              <div class="meta">
+                <div class="name">${buildDisplayName(m)}</div>
+                <div class="sub">${m.passbook_id} · RSBSA ${m.rsbsa_no || '—'}</div>
+              </div>
+              <span class="chev">${icon('chev', 18)}</span>
+            </div>`).join('')}
+      </div>` : ''}
 
       <div class="card">
         <div class="card-title">Seasonal Delivery Panel</div>
@@ -87,6 +112,9 @@ async function renderPassbookDetailBody(container, farmer) {
   `;
 
   document.getElementById('pd-back').onclick = () => navigate('passbooks');
+  container.querySelectorAll('[data-member-id]').forEach(row => {
+    row.onclick = () => navigate('passbookDetail', { id: row.dataset.memberId });
+  });
   document.getElementById('pd-edit').onclick = () => navigate('passbookForm', { id: farmer.passbook_id });
   document.getElementById('pd-print').onclick = () => printPassbookId(farmer);
   document.getElementById('pd-delete').onclick = async () => {
