@@ -7,7 +7,8 @@
  */
 SCREEN_RENDERERS.scanResult = async function (container, params) {
   const id = params && params.id;
-  const farmer = id ? await db.farmers.get(id) : null;
+  const found = id ? await db.farmers.get(id) : null;
+  const farmer = (found && !found.is_deleted) ? found : null;
 
   if (!farmer) {
     container.innerHTML = `<div class="content"><div class="empty-state">${icon('empty', 48)}<p>Passbook not found.</p></div>

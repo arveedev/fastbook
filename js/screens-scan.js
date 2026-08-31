@@ -31,12 +31,16 @@ SCREEN_RENDERERS.scan = async function (container) {
   document.getElementById('manual-lookup-btn').onclick = async () => {
     const q = document.getElementById('manual-lookup').value.trim();
     if (!q) return;
-    const farmer = await db.farmers.get(q) || await db.farmers.where('rsbsa_no').equals(q).first();
+    const byId = await db.farmers.get(q);
+    const farmer = (byId && !byId.is_deleted) ? byId : await db.farmers.where('rsbsa_no').equals(q).and(f => !f.is_deleted).first();
     if (farmer) {
       stopScanner();
       navigate('scanResult', { id: farmer.passbook_id });
     } else {
-      showToast('No matching Passbook found.', 'error');
+      await offerSyncAndRetryLookup(q, (found) => {
+        stopScanner();
+        navigate('scanResult', { id: found.passbook_id });
+      });
     }
   };
 
@@ -176,10 +180,20 @@ async function handleQrDetected(rawText) {
   }
   if (!payload.serial) { scanPaused = false; return; }
 
-  const farmer = await db.farmers.get(payload.serial);
+  const found = await db.farmers.get(payload.serial);
+  const farmer = (found && !found.is_deleted) ? found : null;
   if (!farmer) {
-    showToast('QR code recognized, but no matching Passbook record exists locally.', 'error');
-    setTimeout(() => { scanPaused = false; }, 1200);
+    if (found && found.is_deleted) {
+      showToast('This Passbook has been deleted.', 'error');
+      setTimeout(() => { scanPaused = false; }, 1200);
+      return;
+    }
+    await offerSyncAndRetryLookup(payload.serial, (synced) => {
+      playConfirmationTone();
+      stopScanner();
+      showToast(`Passbook found: ${buildDisplayName(synced)}`, 'success');
+      navigate('scanResult', { id: synced.passbook_id });
+    }, () => { scanPaused = false; });
     return;
   }
 
@@ -188,4 +202,27 @@ async function handleQrDetected(rawText) {
   stopScanner();
   showToast(`Passbook found: ${buildDisplayName(farmer)}`, 'success');
   navigate('scanResult', { id: farmer.passbook_id });
+}
+
+/** A scanned/looked-up passbook_id that isn't cached locally yet (e.g. a
+ *  farmer registered on another device moments ago) is otherwise a dead
+ *  end requiring the user to know to manually hit "Sync Now" and rescan.
+ *  This does that automatically when online, and falls back to the plain
+ *  not-found message when offline or still not found after syncing. */
+async function offerSyncAndRetryLookup(idOrRsbsa, onFound, onNotFound) {
+  if (!isOnline() || typeof runSync !== 'function') {
+    showToast('No matching Passbook record exists locally.', 'error');
+    if (onNotFound) onNotFound();
+    return;
+  }
+  showToast('Not found locally — syncing to check for a newer registration...', 'info', 3000);
+  await runSync().catch(() => {});
+  const byId = await db.farmers.get(idOrRsbsa);
+  const found = (byId && !byId.is_deleted) ? byId : await db.farmers.where('rsbsa_no').equals(idOrRsbsa).and(f => !f.is_deleted).first();
+  if (found) {
+    onFound(found);
+  } else {
+    showToast('No matching Passbook record exists, even after syncing.', 'error');
+    if (onNotFound) onNotFound();
+  }
 }
