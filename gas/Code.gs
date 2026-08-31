@@ -56,6 +56,7 @@ function doGet(e) {
   if (action === 'initDB') return jsonResponse(initializeOrRepairDB());
   if (action === 'getInitialData') return jsonResponse(getInitialData(e.parameter.since));
   if (action === 'dedupeFarmers') return jsonResponse(dedupeFarmers());
+  if (action === 'vacuumDeleted') return jsonResponse(runVacuum());
   return jsonResponse({ status: 'error', message: 'Invalid GET endpoint request' });
 }
 
@@ -207,6 +208,10 @@ function initializeOrRepairDB() {
     log.push('Seeded default System Settings');
   }
 
+  if (ensureVacuumTriggerInstalled()) {
+    log.push(`Installed daily vacuum trigger (permanently removes rows soft-deleted for over ${VACUUM_SAFETY_DAYS} days).`);
+  }
+
   return { status: 'success', repair_logs: log };
 }
 
@@ -272,6 +277,83 @@ function dedupeFarmers() {
     removed: removed,
     log: [`Removed ${removed} duplicate farmer record(s), keeping the earliest passbook_id per unique farmer (matched by name + RSBSA no.).`]
   };
+}
+
+/* ---------------------------------------------------------------------- *
+ *  AUTOMATIC VACUUM
+ *  Soft-deleted rows (is_deleted = true) can't be physically removed from
+ *  the Sheet right away: every device that already cached one needs a
+ *  chance to pull that deletion during a normal sync first. Vacuuming
+ *  removes rows only once they've been soft-deleted for longer than the
+ *  safety window below, and runs on its own daily trigger so it never
+ *  needs a manual click.
+ * ---------------------------------------------------------------------- */
+const VACUUM_SAFETY_DAYS = 7;
+const VACUUM_TRIGGER_HANDLER = 'dailyVacuumJob';
+
+/** Permanently deletes rows in one sheet that are marked is_deleted and
+ *  have been that way for longer than VACUUM_SAFETY_DAYS. */
+function vacuumSoftDeletedRows(sheetName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() <= 1) return 0;
+
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const delIdx = headers.indexOf('is_deleted');
+  const luIdx = headers.indexOf('last_updated');
+  if (delIdx === -1 || luIdx === -1) return 0; // e.g. SystemSettings has no is_deleted column
+
+  const values = sheet.getDataRange().getValues();
+  const cutoff = Date.now() - VACUUM_SAFETY_DAYS * 24 * 60 * 60 * 1000;
+  const rowsToDelete = [];
+
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    const isDeleted = row[delIdx] === true || row[delIdx] === 'TRUE';
+    if (!isDeleted) continue;
+    const lu = new Date(row[luIdx]).getTime();
+    if (!isNaN(lu) && lu < cutoff) rowsToDelete.push(r + 1); // convert to 1-based sheet row number
+  }
+
+  // Delete from the bottom up so earlier row numbers in the list stay valid.
+  rowsToDelete.sort((a, b) => b - a).forEach(rowNum => sheet.deleteRow(rowNum));
+  return rowsToDelete.length;
+}
+
+/** Vacuums every schema'd sheet. Callable manually (?action=vacuumDeleted)
+ *  or by the daily trigger. */
+function runVacuum() {
+  const log = [];
+  let total = 0;
+  Object.keys(DB_SCHEMA).forEach(sheetName => {
+    const removedCount = vacuumSoftDeletedRows(sheetName);
+    total += removedCount;
+    if (removedCount > 0) log.push(`Vacuumed ${removedCount} row(s) from '${sheetName}' (soft-deleted for over ${VACUUM_SAFETY_DAYS} days).`);
+  });
+  if (total === 0) log.push('Nothing to vacuum — no soft-deleted rows older than the safety window.');
+  return { status: 'success', removed: total, log: log };
+}
+
+/** Entry point for the installed time-driven trigger. */
+function dailyVacuumJob() {
+  runVacuum();
+}
+
+/** Installs the daily vacuum trigger if it isn't already present. Safe to
+ *  call on every repair run — checks for an existing trigger first so it
+ *  never creates duplicates. */
+function ensureVacuumTriggerInstalled() {
+  const alreadyInstalled = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === VACUUM_TRIGGER_HANDLER);
+  if (alreadyInstalled) return false;
+  try {
+    ScriptApp.newTrigger(VACUUM_TRIGGER_HANDLER).timeBased().everyDays(1).atHour(3).create();
+    return true;
+  } catch (e) {
+    // Can fail if this deployment hasn't been re-authorized for the
+    // script-triggers scope yet; initializeOrRepairDB() retries this on
+    // every repair run until it succeeds.
+    return false;
+  }
 }
 
 /**

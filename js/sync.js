@@ -46,8 +46,9 @@ async function getGasUrl() {
 // (e.g. this fix protects birth_date from Sheets' date auto-conversion,
 // which an earlier repair version didn't cover; v3 backfills a missing
 // last_updated on rows added directly to the Sheet, which were otherwise
-// invisible to every delta sync after the first).
-const REPAIR_LOGIC_VERSION = '3';
+// invisible to every delta sync after the first; v4 installs the daily
+// vacuum trigger that permanently removes old soft-deleted rows).
+const REPAIR_LOGIC_VERSION = '4';
 
 /** Runs the backend's schema/format repair whenever the repair logic itself
  *  has changed since this device last ran it (tracked by version, not just
