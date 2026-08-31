@@ -134,6 +134,7 @@ async function pushLocalChanges(url, logFn) {
   logFn(`Pushing ${queued.length} local change(s)...`);
   const payload = {};
   const idsToDelete = [];
+  const droppedConflicts = []; // edits discarded because another device changed/deleted the same record first
 
   for (const item of queued) {
     let parsed;
@@ -159,6 +160,13 @@ async function pushLocalChanges(url, logFn) {
       const pkValue = parsed[pkField];
       const currentLocal = await db[item.table_name].get(pkValue);
       if (!currentLocal || currentLocal.last_updated !== parsed.last_updated) {
+        // This device's own edit is being discarded, not just skipped — the
+        // pull that just ran already applied a newer change (or deletion)
+        // to this exact record from elsewhere. Silently dropping this with
+        // only a log line means the user has no idea their edit didn't
+        // stick, and their screen may still be showing it until the next
+        // re-render. Surface it instead.
+        droppedConflicts.push({ table: item.table_name, id: pkValue, reason: currentLocal ? 'changed elsewhere' : 'deleted elsewhere' });
         idsToDelete.push(item.id);
         continue;
       }
@@ -168,6 +176,12 @@ async function pushLocalChanges(url, logFn) {
     if (!payload[sheetName]) payload[sheetName] = [];
     payload[sheetName].push(parsed);
     idsToDelete.push(item.id);
+  }
+
+  if (droppedConflicts.length > 0 && typeof showToast === 'function') {
+    const summary = droppedConflicts.map(c => `${c.table} ${c.id} (${c.reason})`).join(', ');
+    logFn(`${droppedConflicts.length} local edit(s) discarded — already changed elsewhere: ${summary}`);
+    showToast(`${droppedConflicts.length} local change(s) weren't saved because the same record was already changed on another device. Reload to see the current version.`, 'warning', 7000);
   }
 
   if (Object.keys(payload).length === 0) {
@@ -188,10 +202,40 @@ async function pushLocalChanges(url, logFn) {
   if (data.status === 'success') {
     await db.syncQueue.bulkDelete(idsToDelete);
     logFn(`Push complete: ${data.summary.inserted} inserted, ${data.summary.updated} updated.`);
+    if (data.renamed) await applyServerRenames(data.renamed);
+    if (data.summary.quotaWarnings && data.summary.quotaWarnings.length > 0 && typeof showToast === 'function') {
+      showToast(`${data.summary.quotaWarnings.length} delivery/deliveries pushed the season total over quota — review in Reports.`, 'warning', 6000);
+    }
   } else {
     throw new Error(data.message || 'Push sync failed');
   }
   return data.summary;
+}
+
+/** Applies a passbook_id reassignment the backend made to resolve an
+ *  offline ID collision (two devices independently generating the same
+ *  passbook_id before either synced — see processPushSync in gas/Code.gs).
+ *  passbook_id is the local primary key, so the rename can't be a plain
+ *  field update: the old-keyed record has to be removed and reinserted
+ *  under the new key, and any local deliveries that reference the old id
+ *  need to follow it. */
+async function applyServerRenames(renamed) {
+  for (const [tableName, idMap] of Object.entries(renamed)) {
+    for (const [oldId, newId] of Object.entries(idMap)) {
+      const rec = await db[tableName].get(oldId);
+      if (rec) {
+        rec[Object.keys(rec)[0]] = newId;
+        await db[tableName].delete(oldId);
+        await db[tableName].put(rec);
+      }
+      if (tableName === 'farmers') {
+        await db.deliveries.where('passbook_id').equals(oldId).modify({ passbook_id: newId });
+      }
+      if (typeof showToast === 'function') {
+        showToast(`A passbook ID collided with another device's registration and was reassigned (${oldId} → ${newId}).`, 'info', 7000);
+      }
+    }
+  }
 }
 
 /** Pulls delta changes from the backend since the last successful sync. */

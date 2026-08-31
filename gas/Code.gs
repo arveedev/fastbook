@@ -742,42 +742,170 @@ function getInitialData(sinceTimestamp) {
   };
 }
 
+// Main Cropping Season: September - February. Summer: March - August.
+// Mirrors js/db.js's seasonOfDate/seasonYearKeyOfDate — kept in sync manually
+// since Apps Script and the client app are separate deployables.
+function seasonOfDateGas(dateVal) {
+  const month = new Date(dateVal).getMonth();
+  return (month >= 8 || month <= 1) ? 'MAIN' : 'SUMMER';
+}
+function seasonYearKeyOfDateGas(dateVal) {
+  const d = new Date(dateVal);
+  const month = d.getMonth();
+  const year = d.getFullYear();
+  if (month >= 8) return year;
+  if (month <= 1) return year - 1;
+  return year;
+}
+
+/** Server-side (authoritative-data) quota check for one incoming delivery.
+ *  The client can only ever see its own local data when deciding whether a
+ *  delivery is within quota — two devices offline at once can each approve
+ *  a delivery that, combined, exceeds the farmer's season quota, and
+ *  neither would know. This re-checks against the actual Sheet (every
+ *  device's already-synced deliveries) at push time and returns a warning
+ *  string instead of silently letting it through unflagged. Never blocks
+ *  the push — an offline-first app can't refuse data a warehouse already
+ *  physically accepted; it can only surface it for a human to review. */
+function checkDeliveryQuota(ss, deliveryRecord, farmersCache) {
+  const farmersSheet = ss.getSheetByName('Farmers');
+  if (!farmersSheet || farmersSheet.getLastRow() <= 1) return null;
+
+  if (!farmersCache.rows) {
+    const values = farmersSheet.getDataRange().getValues();
+    const headers = values[0];
+    farmersCache.pbIdx = headers.indexOf('passbook_id');
+    farmersCache.hectIdx = headers.indexOf('hectarage');
+    farmersCache.quotaIdx = headers.indexOf('custom_quota_bags');
+    farmersCache.rows = values.slice(1);
+  }
+  const farmerRow = farmersCache.rows.find(r => r[farmersCache.pbIdx] === deliveryRecord.passbook_id);
+  if (!farmerRow) return null;
+
+  const customQuota = Number(farmerRow[farmersCache.quotaIdx]);
+  const quota = customQuota > 0 ? customQuota : Math.floor(Number(farmerRow[farmersCache.hectIdx] || 0) * 100);
+  if (quota <= 0) return null;
+
+  const deliveriesSheet = ss.getSheetByName('Deliveries');
+  if (!deliveriesSheet || deliveriesSheet.getLastRow() <= 1) return null;
+  const dValues = deliveriesSheet.getDataRange().getValues();
+  const dHeaders = dValues[0];
+  const dPbIdx = dHeaders.indexOf('passbook_id');
+  const dDateIdx = dHeaders.indexOf('date_timestamp');
+  const dBagsIdx = dHeaders.indexOf('net_bags_equivalent');
+  const dNumBagsIdx = dHeaders.indexOf('num_bags');
+  const dIdIdx = dHeaders.indexOf('delivery_id');
+  const dDelIdx = dHeaders.indexOf('is_deleted');
+
+  const targetSeason = seasonOfDateGas(deliveryRecord.date_timestamp);
+  const targetYearKey = seasonYearKeyOfDateGas(deliveryRecord.date_timestamp);
+
+  let total = 0;
+  for (let r = 1; r < dValues.length; r++) {
+    const row = dValues[r];
+    if (row[dDelIdx] === true) continue;
+    if (row[dPbIdx] !== deliveryRecord.passbook_id) continue;
+    if (row[dIdIdx] === deliveryRecord.delivery_id) continue; // don't double-count this same delivery on an update
+    if (seasonOfDateGas(row[dDateIdx]) !== targetSeason || seasonYearKeyOfDateGas(row[dDateIdx]) !== targetYearKey) continue;
+    total += Number(row[dBagsIdx] || row[dNumBagsIdx] || 0);
+  }
+  total += Number(deliveryRecord.net_bags_equivalent || deliveryRecord.num_bags || 0);
+
+  if (total > quota) {
+    return `${deliveryRecord.passbook_id} (delivery ${deliveryRecord.delivery_id}): season total ${total} Net Bags exceeds quota of ${quota}.`;
+  }
+  return null;
+}
+
 /**
  * Receives local Dexie sync batches and updates or inserts into Sheets
  */
 function processPushSync(payload) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const summary = { inserted: 0, updated: 0 };
+  // Two devices pushing at (near) the same moment would otherwise each read
+  // the sheet's current state independently and write back based on stale
+  // data — the second write can silently clobber the first with no
+  // conflict detection. Serializing the whole push behind a lock turns that
+  // race into a safe sequence: whoever gets the lock second always reads
+  // the first one's already-committed change.
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) {
+    return { status: 'error', message: 'Backend is busy processing another device\'s sync — please try again in a moment.' };
+  }
 
-  Object.keys(payload).forEach(tableName => {
-    if (!DB_SCHEMA[tableName]) return;
-    const sheet = ss.getSheetByName(tableName);
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const primaryKey = headers[0];
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const summary = { inserted: 0, updated: 0, quotaWarnings: [] };
+    const renamed = {}; // tableName -> { oldId: newId }
+    const farmersCache = {};
 
-    const sheetValues = sheet.getDataRange().getValues();
-    const pkMap = {};
-    for (let r = 1; r < sheetValues.length; r++) {
-      pkMap[sheetValues[r][0]] = r + 1; // Row index (1-based)
-    }
+    Object.keys(payload).forEach(tableName => {
+      if (!DB_SCHEMA[tableName]) return;
+      const sheet = ss.getSheetByName(tableName);
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const primaryKey = headers[0];
+      const createdAtIdx = headers.indexOf('created_at');
 
-    payload[tableName].forEach(record => {
-      record.last_updated = new Date().toISOString();
-      const rowValues = headers.map(h => record[h] !== undefined ? record[h] : '');
-      const pkValue = record[primaryKey];
-
-      if (pkMap[pkValue]) {
-        const targetRow = pkMap[pkValue];
-        sheet.getRange(targetRow, 1, 1, headers.length).setValues([rowValues]);
-        summary.updated++;
-      } else {
-        sheet.appendRow(rowValues);
-        summary.inserted++;
+      const sheetValues = sheet.getDataRange().getValues();
+      const pkMap = {};
+      for (let r = 1; r < sheetValues.length; r++) {
+        pkMap[sheetValues[r][0]] = r + 1; // Row index (1-based)
       }
-    });
-  });
 
-  return { status: 'success', summary: summary };
+      const tableRenames = {};
+      let nextSeqByType = {}; // cached within this batch to avoid reissuing the same id twice
+
+      payload[tableName].forEach(record => {
+        record.last_updated = new Date().toISOString();
+        let pkValue = record[primaryKey];
+
+        // Two devices offline at once can independently generate the same
+        // passbook_id before either has synced (js/db.js's
+        // generateSerialNumber can only see what THIS device already
+        // pulled). Detect that here instead of silently overwriting one
+        // farmer's data with an unrelated farmer's: if a row already
+        // exists under this key but its created_at doesn't match the
+        // incoming record's, they're two distinct records that only
+        // coincidentally share an ID — reissue a fresh one for the
+        // incoming record rather than clobbering what's already there.
+        if (tableName === 'farmers' && pkMap[pkValue] && createdAtIdx !== -1 && record.created_at) {
+          const existingCreatedAt = sheetValues[pkMap[pkValue] - 1][createdAtIdx];
+          if (existingCreatedAt && String(existingCreatedAt) !== String(record.created_at)) {
+            const typeCode = record.passbook_type === 'Master' ? 'MB' : 'FB';
+            if (!(typeCode in nextSeqByType)) nextSeqByType[typeCode] = nextPassbookSeq(sheetValues, 0, typeCode);
+            const newId = buildPassbookId(typeCode, nextSeqByType[typeCode]++);
+            tableRenames[pkValue] = newId;
+            record[primaryKey] = newId;
+            pkValue = newId;
+          }
+        }
+
+        if (tableName === 'deliveries' && !pkMap[pkValue]) {
+          const warning = checkDeliveryQuota(ss, record, farmersCache);
+          if (warning) summary.quotaWarnings.push(warning);
+        }
+
+        const rowValues = headers.map(h => record[h] !== undefined ? record[h] : '');
+
+        if (pkMap[pkValue]) {
+          const targetRow = pkMap[pkValue];
+          sheet.getRange(targetRow, 1, 1, headers.length).setValues([rowValues]);
+          summary.updated++;
+        } else {
+          sheet.appendRow(rowValues);
+          pkMap[pkValue] = sheet.getLastRow(); // keep pkMap current for the rest of this batch
+          summary.inserted++;
+        }
+      });
+
+      if (Object.keys(tableRenames).length > 0) renamed[tableName] = tableRenames;
+    });
+
+    const result = { status: 'success', summary: summary };
+    if (Object.keys(renamed).length > 0) result.renamed = renamed;
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
