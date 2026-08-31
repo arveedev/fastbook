@@ -388,6 +388,17 @@ async function renderWizardStepReview(container, state) {
 
   document.getElementById('wiz-back').onclick = () => { state.step = 2; renderWizardStep(container, state); };
   document.getElementById('wiz-finish').onclick = async () => {
+    if (d.passbook_type === 'Individual') {
+      const dup = await findRsbsaDuplicate(d.rsbsa_no, null);
+      if (dup) {
+        const proceed = await confirmDialog(
+          `RSBSA number ${d.rsbsa_no} is already registered to <b>${buildDisplayName(dup)}</b> (${dup.passbook_id}). Register this as a separate passbook anyway?`,
+          'Possible Duplicate RSBSA'
+        );
+        if (!proceed) return;
+      }
+    }
+
     const finishBtn = document.getElementById('wiz-finish');
     finishBtn.disabled = true;
     finishBtn.innerHTML = `<div class="loader" style="width:18px;height:18px;border-color:rgba(255,255,255,0.4);border-top-color:#fff;"></div> Saving...`;

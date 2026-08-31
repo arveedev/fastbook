@@ -311,10 +311,33 @@ async function submitPassbookForm(record, editingId, sameAsHome) {
     }
   }
 
+  const customQuotaEl = document.getElementById('f-custom_quota_bags');
+  const hectarage = unformatNumber(document.getElementById('f-hectarage').value);
+  const customQuota = customQuotaEl ? unformatNumber(customQuotaEl.value) : (record.custom_quota_bags || 0);
+  const rsbsaNo = document.getElementById('f-rsbsa_no').value.trim();
+
+  // The wizard already blocks zero/negative hectarage on new registrations;
+  // this form is also used to edit existing records, some of which predate
+  // that check, so only require a usable quota basis (hectarage or an
+  // explicit override) rather than forcing every legacy edit to supply one.
+  if (passbookType === 'Individual' && !(hectarage > 0) && !(customQuota > 0)) {
+    showToast('Please enter a valid hectarage, or set a Custom Quota override.', 'error');
+    return;
+  }
+
+  if (passbookType === 'Individual') {
+    const dup = await findRsbsaDuplicate(rsbsaNo, editingId || null);
+    if (dup) {
+      const proceed = await confirmDialog(
+        `RSBSA number ${rsbsaNo} is already registered to <b>${buildDisplayName(dup)}</b> (${dup.passbook_id}). Save this as a separate passbook anyway?`,
+        'Possible Duplicate RSBSA'
+      );
+      if (!proceed) return;
+    }
+  }
+
   const nowIso = new Date().toISOString();
   const passbookId = editingId || await generateSerialNumber(passbookType);
-
-  const customQuotaEl = document.getElementById('f-custom_quota_bags');
 
   const record_out = {
     passbook_id: passbookId,
@@ -329,7 +352,7 @@ async function submitPassbookForm(record, editingId, sameAsHome) {
     farm_province: farmProvince,
     farm_municipality: farmMunicipality,
     farm_barangay: farmBarangay,
-    hectarage: unformatNumber(document.getElementById('f-hectarage').value),
+    hectarage,
     birth_date: document.getElementById('f-birth_date').value,
     civil_status: document.getElementById('f-civil_status').value,
     spouse_name: document.getElementById('f-spouse_name') ? document.getElementById('f-spouse_name').value.trim() : '',
@@ -338,8 +361,8 @@ async function submitPassbookForm(record, editingId, sameAsHome) {
     sector: document.getElementById('f-sector').value,
     irrigated,
     landholding_data: JSON.stringify(landholding),
-    rsbsa_no: document.getElementById('f-rsbsa_no').value.trim(),
-    custom_quota_bags: customQuotaEl ? unformatNumber(customQuotaEl.value) : (record.custom_quota_bags || 0),
+    rsbsa_no: rsbsaNo,
+    custom_quota_bags: customQuota,
     created_at: editingId ? record.created_at || nowIso : nowIso,
     last_updated: nowIso,
     is_deleted: false

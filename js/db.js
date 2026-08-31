@@ -41,10 +41,19 @@ async function initializeLocalDB() {
 
   // Migration: auto-fill the deployed backend URL for devices that already
   // exist but never had one configured, so they don't need manual setup.
-  const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxjpUDZUsnH7O3Qy3iqvLtaN43JGHJiqlqUMdYN4Wx9WiWGy9IwKwiXc7Ou9V2XTGfg0w/exec';
-  const existingUrlRow = await db.systemSettings.get('GAS_WEBAPP_URL');
-  if (!existingUrlRow || !existingUrlRow.setting_value) {
-    await db.systemSettings.put({ setting_key: 'GAS_WEBAPP_URL', setting_value: DEFAULT_GAS_URL, last_updated: nowIso });
+  // Skipped on localhost/dev hosts: this URL points at the real production
+  // Sheet, and a local dev/test server auto-connecting to it means every
+  // test registration silently becomes live production data (this is
+  // exactly how a handful of test farmer records ended up in production
+  // during development — see git history). Real deployed devices (the
+  // actual hosted domain) still get the convenience.
+  const isLocalDevHost = ['localhost', '127.0.0.1'].includes(location.hostname) || location.hostname === '';
+  if (!isLocalDevHost) {
+    const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxjpUDZUsnH7O3Qy3iqvLtaN43JGHJiqlqUMdYN4Wx9WiWGy9IwKwiXc7Ou9V2XTGfg0w/exec';
+    const existingUrlRow = await db.systemSettings.get('GAS_WEBAPP_URL');
+    if (!existingUrlRow || !existingUrlRow.setting_value) {
+      await db.systemSettings.put({ setting_key: 'GAS_WEBAPP_URL', setting_value: DEFAULT_GAS_URL, last_updated: nowIso });
+    }
   }
 
   // Seed default Administrator account (PIN: 123456) if Users table empty
@@ -76,7 +85,9 @@ async function initializeLocalDB() {
       ['SEASON_OVERRIDE', 'AUTO'],
       ['BAG_WEIGHT_KG', '50'],
       ['THEME_MODE', 'light'],
-      ['GAS_WEBAPP_URL', 'https://script.google.com/macros/s/AKfycbxjpUDZUsnH7O3Qy3iqvLtaN43JGHJiqlqUMdYN4Wx9WiWGy9IwKwiXc7Ou9V2XTGfg0w/exec'],
+      // See the isLocalDevHost check above — never auto-connect a local
+      // dev/test host to the real production backend.
+      ['GAS_WEBAPP_URL', isLocalDevHost ? '' : 'https://script.google.com/macros/s/AKfycbxjpUDZUsnH7O3Qy3iqvLtaN43JGHJiqlqUMdYN4Wx9WiWGy9IwKwiXc7Ou9V2XTGfg0w/exec'],
       ['LAST_SYNC_TIMESTAMP', '']
     ];
     for (const [key, value] of defaults) {
@@ -179,6 +190,22 @@ async function generateSerialNumber(passbookType) {
 
   const paddedSeq = String(nextSeq).padStart(4, '0');
   return `${prefix}${paddedSeq}`;
+}
+
+/** Looks up whether another active Individual farmer already uses this
+ *  RSBSA number — neither registration path (wizard or classic form)
+ *  checked this before, so two different passbook_ids could silently carry
+ *  the same RSBSA. Returns the conflicting record, or null. Ignores blank
+ *  and known-placeholder values (many real legacy rows use "WALK-IN" or
+ *  similar as a stand-in for "no RSBSA yet") since those aren't meaningful
+ *  duplicates. */
+async function findRsbsaDuplicate(rsbsaNo, excludePassbookId) {
+  const val = (rsbsaNo || '').trim();
+  if (!val || /^(walk-?in|n\/?a|none|pending)$/i.test(val)) return null;
+  return await db.farmers
+    .filter(f => !f.is_deleted && f.passbook_type === 'Individual' &&
+      f.passbook_id !== excludePassbookId && (f.rsbsa_no || '').trim().toLowerCase() === val.toLowerCase())
+    .first();
 }
 
 /** Makes sure a Master (Farmer Organization) passbook exists for the given
