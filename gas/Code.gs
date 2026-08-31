@@ -273,11 +273,21 @@ function dedupeFarmers() {
     sheet.getRange(2, delIdx + 1, delCol.length, 1).setValues(delCol);
   }
 
-  return {
+  const result = {
     status: 'success',
     removed: removed,
     log: [`Removed ${removed} duplicate farmer record(s), keeping the earliest passbook_id per unique farmer (matched by name + RSBSA no.).`]
   };
+  Logger.log(JSON.stringify(result)); // visible under View > Executions when run manually from the Apps Script editor
+  return result;
+}
+
+/** Convenience entry point: select this function in the Apps Script editor's
+ *  function dropdown and click Run to dedupe directly, with no web app
+ *  deployment or app UI needed. Check View > Executions afterward for the
+ *  result log. */
+function runDedupeFarmersManually() {
+  dedupeFarmers();
 }
 
 /**
