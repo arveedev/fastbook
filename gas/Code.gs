@@ -193,6 +193,41 @@ function normalizeBooleanColumns(sheet, headers) {
   return totalFixed;
 }
 
+/** The app only ever writes passbook_type as 'Individual' or 'Master', but
+ *  the original bulk import (which predates the app) used a third value,
+ *  'FO', for individual farmers who belong to a Farmer Organization —
+ *  presumably meaning "this person is an FO member," not "this person IS
+ *  the FO." Left as-is, those rows are invisible in both the "Individual
+ *  Farmer" and "Master / FO" list tabs (both filter on an exact type
+ *  match) and never get picked up by createMissingOrgPassbooks(), since
+ *  that only looks at rows literally typed 'Individual'. Normalizes any
+ *  non-Master, non-Individual value back to 'Individual', which is what
+ *  these rows actually represent. */
+function normalizeStrayPassbookTypes(sheet, headers) {
+  const typeIdx = headers.indexOf('passbook_type');
+  const luIdx = headers.indexOf('last_updated');
+  if (typeIdx === -1 || sheet.getLastRow() <= 1) return 0;
+
+  const numRows = sheet.getLastRow() - 1;
+  const range = sheet.getRange(2, typeIdx + 1, numRows, 1);
+  const values = range.getValues();
+  const fixedRowNumbers = [];
+  for (let i = 0; i < values.length; i++) {
+    if (values[i][0] !== 'Individual' && values[i][0] !== 'Master') {
+      values[i][0] = 'Individual';
+      fixedRowNumbers.push(i + 2);
+    }
+  }
+  if (fixedRowNumbers.length > 0) {
+    range.setValues(values);
+    if (luIdx !== -1) {
+      const now = new Date().toISOString();
+      sheet.getRangeList(fixedRowNumbers.map(r => sheet.getRange(r, luIdx + 1).getA1Notation())).setValue(now);
+    }
+  }
+  return fixedRowNumbers.length;
+}
+
 function initializeOrRepairDB() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const log = [];
@@ -235,6 +270,13 @@ function initializeOrRepairDB() {
     const normalized = normalizeBooleanColumns(sheet, DB_SCHEMA[sheetName]);
     if (normalized > 0) {
       log.push(`Fixed ${normalized} is_deleted cell(s) in '${sheetName}' that had been stored as text ("true"/"false") instead of a real boolean, which was hiding those records from every device.`);
+    }
+
+    if (sheetName === 'Farmers') {
+      const typeFixed = normalizeStrayPassbookTypes(sheet, DB_SCHEMA[sheetName]);
+      if (typeFixed > 0) {
+        log.push(`Normalized ${typeFixed} row(s) with a legacy passbook_type value (e.g. "FO" from the original bulk import) back to 'Individual' — those rows were invisible in both the Individual and Master/FO list tabs.`);
+      }
     }
   });
 
