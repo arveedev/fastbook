@@ -69,7 +69,12 @@ async function bootApp() {
   const savedSession = sessionStorage.getItem('nfa_session_user');
   if (savedSession) {
     AppState.currentUser = JSON.parse(savedSession);
-    renderAppShell();
+    // renderAppShell() does async work (getAllSettings()) before it creates
+    // #screen-container. Without this await, navigate('dashboard') below can
+    // run first, find no container yet, and silently bail out — leaving
+    // AppState.route stuck at 'dashboard' with nothing ever actually
+    // rendering it. This is exactly what caused a blank dashboard on reload.
+    await renderAppShell();
     navigate('dashboard');
   } else {
     renderLoginScreen();
