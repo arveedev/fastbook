@@ -262,6 +262,15 @@ async function openEditDeliveryModal(delivery, farmer, onSaved) {
   const kilosInput = document.getElementById('ed-kilos');
   attachLiveCommaFormatter(bagsInput);
   attachLiveCommaFormatter(kilosInput);
+  // Unlike the create-delivery modal, kilos here is pre-filled with the
+  // delivery's real, already-recorded value, which can legitimately differ
+  // from bags*bagWeight (actual weighing varies per bag). The mutation this
+  // flag guards only ever runs from the bagsInput 'input' listener below —
+  // never from the initial recomputeEditWarning() call at the bottom of
+  // this function — so starting it false is safe: opening the modal never
+  // touches kilos, and it only auto-syncs once the user actually edits
+  // bags in this session (and stops the moment they touch kilos directly).
+  let kilosManuallyEdited = false;
 
   function recomputeEditWarning() {
     const bags = unformatNumber(bagsInput.value);
@@ -281,8 +290,23 @@ async function openEditDeliveryModal(delivery, farmer, onSaved) {
       warnHost.innerHTML = '';
     }
   }
-  bagsInput.addEventListener('input', recomputeEditWarning);
-  kilosInput.addEventListener('input', recomputeEditWarning);
+  // Editing "Number of Bags" alone previously left net_kilos/net_bags_equivalent
+  // stale (kilosInput still held the pre-edit value, and a non-empty stale
+  // value always won over recomputing from the new bags in the checks
+  // above) — silently wrong saved data, and it could mask a real quota
+  // violation instead of catching one. Auto-sync kilos from the new bags
+  // value, same as the create-delivery flow, but only once the user
+  // actually edits bags in this session (not on open — see the comment on
+  // kilosManuallyEdited above).
+  bagsInput.addEventListener('input', () => {
+    if (!kilosManuallyEdited) {
+      const bags = unformatNumber(bagsInput.value);
+      const autoKilos = bags * bagWeight;
+      kilosInput.value = autoKilos ? formatComma(autoKilos) : '';
+    }
+    recomputeEditWarning();
+  });
+  kilosInput.addEventListener('input', () => { kilosManuallyEdited = true; recomputeEditWarning(); });
   recomputeEditWarning();
 
   document.getElementById('edit-delivery-form').addEventListener('submit', async (e) => {
