@@ -30,6 +30,7 @@ async function renderDashboardBody(container) {
   const bagWeight = Number(settings.BAG_WEIGHT_KG || 50);
 
   const now = new Date();
+  const currentYear = now.getFullYear();
   const activeSeason = await getActiveSeason();
   const currentSeasonYearKey = seasonYearKeyOfDate(now);
 
