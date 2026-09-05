@@ -312,10 +312,23 @@ async function computeSeasonalAllowance(farmerRecord) {
 /* ---------------------------------------------------------------------- *
  *  SUPPLIER DISPLAY NAME AUTO-FORMATTING
  * ---------------------------------------------------------------------- */
+/** Every screen renders free-text fields (names, orgs, addresses, comments)
+ *  straight into innerHTML via template literals, with no escaping anywhere
+ *  — confirmed via testing: a farmer registered with
+ *  first_name = '<img src=x onerror=...>' executes the payload on every
+ *  device that views the passbook list. Since this data syncs to every
+ *  device, anyone who can register or edit a record can plant a persistent
+ *  XSS that runs on other users' (including Admin) devices. Use this at
+ *  every point user-controlled text is interpolated into an innerHTML
+ *  template literal. */
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function buildDisplayName(farmer) {
-  const fullName = [farmer.first_name, farmer.middle_name, farmer.last_name].filter(Boolean).join(' ');
+  const fullName = [farmer.first_name, farmer.middle_name, farmer.last_name].filter(Boolean).map(escapeHtml).join(' ');
   if (farmer.farmer_org && farmer.farmer_org.trim() !== '') {
-    return `${farmer.farmer_org} c/o ${fullName}`;
+    return `${escapeHtml(farmer.farmer_org)} c/o ${fullName}`;
   }
   return fullName;
 }

@@ -43,7 +43,7 @@ async function renderGeneralSettings(host, isAdmin) {
     <div class="card">
       <div class="card-title">Agency &amp; Region Configuration</div>
       <div class="field"><label>Region Code</label><input type="text" id="s-region" value="${s.REGION_CODE || 'V'}" ${isAdmin ? '' : 'disabled'} maxlength="3" style="text-transform:uppercase;"></div>
-      <div class="field"><label>Branch Name</label><input type="text" id="s-branch-name" value="${s.BRANCH_NAME || ''}" ${isAdmin ? '' : 'disabled'}></div>
+      <div class="field"><label>Branch Name</label><input type="text" id="s-branch-name" value="${escapeHtml(s.BRANCH_NAME) || ''}" ${isAdmin ? '' : 'disabled'}></div>
       <div class="field"><label>Branch Code (3-letter)</label><input type="text" id="s-branch-code" value="${s.BRANCH_CODE || ''}" ${isAdmin ? '' : 'disabled'} maxlength="3" style="text-transform:uppercase;"></div>
       <div class="field"><label>Active Season Procurement Target (Net Bags)</label><input type="text" inputmode="decimal" id="s-target-bags" value="${formatComma(s.TARGET_PROCUREMENT_BAGS || 0)}" ${isAdmin ? '' : 'disabled'}></div>
       <div class="field"><label>Standard Bag Weight (kg)</label><input type="text" inputmode="numeric" id="s-bag-weight" value="${s.BAG_WEIGHT_KG || 50}" ${isAdmin ? '' : 'disabled'}></div>
@@ -162,7 +162,7 @@ async function renderWarehouseSettings(host) {
       <div class="flex-between mb-14"><div class="card-title" style="margin:0;">Warehouse List</div><button class="btn btn-sm btn-primary" id="add-wh">+ Add Warehouse</button></div>
       ${warehouses.length === 0 ? `<p class="text-muted text-sm">No warehouses configured yet.</p>` : warehouses.map(w => `
         <div class="flex-between" style="padding:10px 0; border-bottom:1px solid var(--border);">
-          <div><div style="font-weight:700;font-size:13.5px;">${w.warehouse_name}</div><div class="text-muted text-sm">${w.province} · ${formatComma(w.capacity_bags)} bag capacity</div></div>
+          <div><div style="font-weight:700;font-size:13.5px;">${escapeHtml(w.warehouse_name)}</div><div class="text-muted text-sm">${w.province} · ${formatComma(w.capacity_bags)} bag capacity</div></div>
           <div style="display:flex;gap:6px;">
             <button class="btn btn-sm btn-outline" data-edit="${w.warehouse_id}">Edit</button>
             <button class="btn btn-sm btn-danger" data-del="${w.warehouse_id}">Remove</button>
@@ -196,7 +196,7 @@ function openWarehouseEditor(existing, onDone) {
     const provinces = getProvinces(s.REGION_CODE || 'V');
     const backdrop = openModal(`
       <div class="modal-header"><h3>${existing ? 'Edit' : 'Add'} Warehouse</h3><button class="modal-close" id="wh-close">✕</button></div>
-      <div class="field"><label>Warehouse Name <span class="req">*</span></label><input type="text" id="wh-name" value="${existing ? existing.warehouse_name : ''}"></div>
+      <div class="field"><label>Warehouse Name <span class="req">*</span></label><input type="text" id="wh-name" value="${existing ? escapeHtml(existing.warehouse_name) : ''}"></div>
       <div class="field"><label>Province <span class="req">*</span></label>
         <select id="wh-province">${provinces.map(p => `<option value="${p}" ${existing && existing.province === p ? 'selected' : ''}>${p}</option>`).join('')}</select>
       </div>
@@ -240,7 +240,7 @@ async function renderUserSettings(host) {
       <div class="flex-between mb-14"><div class="card-title" style="margin:0;">User Accounts</div><button class="btn btn-sm btn-primary" id="add-user">+ Add User</button></div>
       ${users.map(u => `
         <div class="flex-between" style="padding:10px 0; border-bottom:1px solid var(--border);">
-          <div><div style="font-weight:700;font-size:13.5px;">${u.full_name}</div><div class="text-muted text-sm">${u.role} · ${u.status}</div></div>
+          <div><div style="font-weight:700;font-size:13.5px;">${escapeHtml(u.full_name)}</div><div class="text-muted text-sm">${u.role} · ${u.status}</div></div>
           <div style="display:flex;gap:6px;">
             <button class="btn btn-sm btn-outline" data-edit="${u.user_id}">Edit</button>
             ${u.user_id !== AppState.currentUser.user_id ? `<button class="btn btn-sm btn-danger" data-del="${u.user_id}">Deactivate</button>` : ''}
@@ -271,7 +271,7 @@ async function renderUserSettings(host) {
 function openUserEditor(existing, onDone) {
   const backdrop = openModal(`
     <div class="modal-header"><h3>${existing ? 'Edit' : 'Add'} User</h3><button class="modal-close" id="us-close">✕</button></div>
-    <div class="field"><label>Full Name <span class="req">*</span></label><input type="text" id="us-name" value="${existing ? existing.full_name : ''}"></div>
+    <div class="field"><label>Full Name <span class="req">*</span></label><input type="text" id="us-name" value="${existing ? escapeHtml(existing.full_name) : ''}"></div>
     <div class="field"><label>Role <span class="req">*</span></label>
       <select id="us-role">
         <option value="Warehouse Staff" ${existing && existing.role === 'Warehouse Staff' ? 'selected' : ''}>Warehouse Staff</option>

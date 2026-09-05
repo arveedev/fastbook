@@ -78,7 +78,7 @@ async function renderRosterReport(host) {
   farmers = genericSort(farmers, s.key, s.dir, accessor);
 
   const rowsHtml = farmers.map(f => `
-    <tr><td>${f.passbook_id}</td><td>${buildDisplayName(f)}</td><td>${f.rsbsa_no}</td><td>${formatComma(f.hectarage)}</td><td>${f.contact_no || '—'}</td></tr>
+    <tr><td>${f.passbook_id}</td><td>${buildDisplayName(f)}</td><td>${escapeHtml(f.rsbsa_no) || '—'}</td><td>${formatComma(f.hectarage)}</td><td>${escapeHtml(f.contact_no) || '—'}</td></tr>
   `).join('');
   const printTableHtml = `
     <table>
@@ -141,7 +141,7 @@ async function renderDeliveryLogReport(host) {
   deliveries = genericSort(deliveries, s.key, s.dir, accessor);
 
   const rowsHtml = deliveries.map(d => `
-    <tr><td>${new Date(d.date_timestamp).toLocaleString()}</td><td>${d.display_name}</td><td>${d.rsbsa_no}</td><td>${d.warehouse_name}</td><td>${d.variety}</td><td>${formatComma(d.num_bags)}</td><td>${formatWeightValue(d.net_kilos, unit)}</td></tr>
+    <tr><td>${new Date(d.date_timestamp).toLocaleString()}</td><td>${escapeHtml(d.display_name)}</td><td>${escapeHtml(d.rsbsa_no) || '—'}</td><td>${escapeHtml(d.warehouse_name)}</td><td>${escapeHtml(d.variety)}</td><td>${formatComma(d.num_bags)}</td><td>${formatWeightValue(d.net_kilos, unit)}</td></tr>
   `).join('');
   const printTableHtml = `
     <table>
@@ -224,7 +224,7 @@ async function renderWarehouseSummaryReport(host) {
   rows = genericSort(rows, s.key, s.dir, accessor);
 
   const rowsHtml = rows.map(r => `<tr>
-    <td>${r.name}</td>
+    <td>${escapeHtml(r.name)}</td>
     <td>${formatComma(r.dayBags)}</td><td>${formatWeightValue(r.dayKilos, unit)}</td>
     <td>${formatComma(r.monthBags)}</td><td>${formatWeightValue(r.monthKilos, unit)}</td>
     <td>${formatComma(r.seasonBags)}</td><td>${formatWeightValue(r.seasonKilos, unit)}</td>

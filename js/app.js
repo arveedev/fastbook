@@ -98,11 +98,11 @@ async function renderAppShell() {
     <div class="topbar">
       <div class="logo-badge">NFA</div>
       <div class="title-block">
-        <h1>${settings.AGENCY_NAME || 'NFA'} Passbook — ${settings.BRANCH_NAME || ''} Branch</h1>
+        <h1>${escapeHtml(settings.AGENCY_NAME) || 'NFA'} Passbook — ${escapeHtml(settings.BRANCH_NAME) || ''} Branch</h1>
         <span>${getRegionName(settings.REGION_CODE || 'V')}</span>
       </div>
       <button class="icon-btn" id="theme-toggle-btn" title="Toggle theme">${icon(AppState.theme === 'dark' ? 'sun' : 'moon', 17)}</button>
-      <button class="icon-btn" id="logout-btn" title="Logout (${AppState.currentUser.full_name} · ${AppState.currentUser.role})">${icon('logout', 17)}</button>
+      <button class="icon-btn" id="logout-btn" title="Logout (${escapeHtml(AppState.currentUser.full_name)} · ${AppState.currentUser.role})">${icon('logout', 17)}</button>
     </div>
     <div class="sky-banner" id="sky-banner"></div>
     <div id="screen-container" style="position:relative; flex:1; overflow:hidden;"></div>

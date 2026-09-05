@@ -47,7 +47,7 @@ async function renderScanResultBody(container, farmer) {
           ${name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()}
         </div>
         <h2 style="font-size:18px;font-weight:800;">${name}</h2>
-        <p class="text-muted text-sm mt-8">${farmer.passbook_id} · RSBSA ${farmer.rsbsa_no}</p>
+        <p class="text-muted text-sm mt-8">${farmer.passbook_id} · RSBSA ${escapeHtml(farmer.rsbsa_no)}</p>
         <span class="badge ${farmer.passbook_type === 'Master' ? 'badge-green' : 'badge-navy'}" style="margin-top:8px;">${farmer.passbook_type === 'Master' ? 'MASTER / FO PASSBOOK' : 'INDIVIDUAL FARMER'}</span>
       </div>
 

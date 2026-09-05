@@ -48,20 +48,20 @@ async function renderPassbookDetailBody(container, farmer) {
 
       <div class="card stagger">
         <h2 style="font-size:20px;font-weight:800;">${name}</h2>
-        <p class="text-muted" style="font-size:13.5px; margin-top:6px;">${farmer.passbook_id} · RSBSA ${farmer.rsbsa_no}</p>
+        <p class="text-muted" style="font-size:13.5px; margin-top:6px;">${farmer.passbook_id} · RSBSA ${escapeHtml(farmer.rsbsa_no)}</p>
         <div class="divider"></div>
         <div class="two-col" style="font-size:14px;">
           <div><b>Civil Status:</b><br>${farmer.civil_status || '—'}</div>
           <div><b>Gender:</b><br>${farmer.gender || '—'}</div>
-          <div><b>Contact:</b><br>${farmer.contact_no || '—'}</div>
+          <div><b>Contact:</b><br>${escapeHtml(farmer.contact_no) || '—'}</div>
           <div><b>Sector:</b><br>${farmer.sector || '—'}</div>
           <div><b>Hectarage:</b><br>${formatComma(farmer.hectarage)} Ha</div>
           <div><b>Irrigated:</b><br>${farmer.irrigated || '—'}</div>
         </div>
         <div class="divider"></div>
-        <div style="font-size:14px;"><b>Home Address:</b><br>${farmer.home_barangay}, ${farmer.home_municipality}, ${farmer.home_province}</div>
-        <div style="font-size:14px; margin-top:10px;"><b>Farm Address:</b><br>${farmer.farm_barangay}, ${farmer.farm_municipality}, ${farmer.farm_province}</div>
-        <div style="font-size:14px; margin-top:10px;"><b>Landholding Data:</b><br>${landholding.join(', ') || '—'}</div>
+        <div style="font-size:14px;"><b>Home Address:</b><br>${escapeHtml(farmer.home_barangay)}, ${escapeHtml(farmer.home_municipality)}, ${escapeHtml(farmer.home_province)}</div>
+        <div style="font-size:14px; margin-top:10px;"><b>Farm Address:</b><br>${escapeHtml(farmer.farm_barangay)}, ${escapeHtml(farmer.farm_municipality)}, ${escapeHtml(farmer.farm_province)}</div>
+        <div style="font-size:14px; margin-top:10px;"><b>Landholding Data:</b><br>${escapeHtml(landholding.join(', ')) || '—'}</div>
       </div>
 
       ${farmer.passbook_type === 'Master' ? `
@@ -73,7 +73,7 @@ async function renderPassbookDetailBody(container, farmer) {
               <div class="avatar">${(m.first_name || '?')[0].toUpperCase()}</div>
               <div class="meta">
                 <div class="name">${buildDisplayName(m)}</div>
-                <div class="sub">${m.passbook_id} · RSBSA ${m.rsbsa_no || '—'}</div>
+                <div class="sub">${m.passbook_id} · RSBSA ${escapeHtml(m.rsbsa_no) || '—'}</div>
               </div>
               <span class="chev">${icon('chev', 18)}</span>
             </div>`).join('')}

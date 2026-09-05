@@ -18,7 +18,7 @@ async function openRecordDeliveryModal(farmer, onSaved) {
       <button class="modal-close" id="rd-close">✕</button>
     </div>
     <div class="text-sm text-muted" style="margin-bottom:12px; line-height:1.6;">
-      <b style="color:var(--text);">${displayName}</b> · RSBSA ${farmer.rsbsa_no}<br>${now.toLocaleString()}
+      <b style="color:var(--text);">${displayName}</b> · RSBSA ${escapeHtml(farmer.rsbsa_no)}<br>${now.toLocaleString()}
     </div>
     <div class="card" style="background:var(--surface-2);box-shadow:none;">
       <div class="text-sm text-muted">Remaining Seasonal Balance</div>
@@ -33,7 +33,7 @@ async function openRecordDeliveryModal(farmer, onSaved) {
     <form id="delivery-form" class="mt-14">
       <div class="field"><label>Target Warehouse <span class="req">*</span></label>
         <select id="dl-warehouse" class="input-guided" required>
-          ${warehouses.map(w => `<option value="${w.warehouse_name}">${w.warehouse_name}</option>`).join('')}
+          ${warehouses.map(w => `<option value="${escapeHtml(w.warehouse_name)}">${escapeHtml(w.warehouse_name)}</option>`).join('')}
         </select>
       </div>
       <div class="field"><label>Palay Variety <span class="req">*</span></label>
@@ -171,7 +171,7 @@ function renderDeliveryHistoryRow(d, unit) {
     <div class="flex-between delivery-history-row" data-delivery-id="${d.delivery_id}" style="padding:10px 0; border-bottom:1px solid var(--border);">
       <div style="min-width:0; flex:1;">
         <div class="text-sm" style="font-weight:700;">${new Date(d.date_timestamp).toLocaleDateString()} <span class="text-muted" style="font-weight:500;">${new Date(d.date_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>
-        <div class="text-muted" style="font-size:11px;">${d.warehouse_name} · ${d.variety}</div>
+        <div class="text-muted" style="font-size:11px;">${escapeHtml(d.warehouse_name)} · ${escapeHtml(d.variety)}</div>
       </div>
       <div style="text-align:right; margin-right:8px;">
         <span class="badge badge-gold">${formatComma(d.num_bags)} Net Bags</span>
@@ -240,7 +240,7 @@ async function openEditDeliveryModal(delivery, farmer, onSaved) {
     <form id="edit-delivery-form">
       <div class="field"><label>Target Warehouse <span class="req">*</span></label>
         <select id="ed-warehouse" class="input-guided" required>
-          ${warehouses.map(w => `<option value="${w.warehouse_name}" ${w.warehouse_name === delivery.warehouse_name ? 'selected' : ''}>${w.warehouse_name}</option>`).join('')}
+          ${warehouses.map(w => `<option value="${escapeHtml(w.warehouse_name)}" ${w.warehouse_name === delivery.warehouse_name ? 'selected' : ''}>${escapeHtml(w.warehouse_name)}</option>`).join('')}
         </select>
       </div>
       <div class="field"><label>Palay Variety <span class="req">*</span></label>
@@ -284,7 +284,7 @@ async function openEditDeliveryModal(delivery, farmer, onSaved) {
       </div>
       ${AppState.currentUser.role === 'Admin' ? `
         <div class="field mt-8"><label>Admin Override — Audit Comment <span class="req">*</span></label>
-        <textarea id="ed-override-comment" rows="2" placeholder="Explain reason for exceeding seasonal allowance...">${delivery.override_comment || ''}</textarea></div>
+        <textarea id="ed-override-comment" rows="2" placeholder="Explain reason for exceeding seasonal allowance...">${escapeHtml(delivery.override_comment) || ''}</textarea></div>
       ` : ''}`;
     } else {
       warnHost.innerHTML = '';
